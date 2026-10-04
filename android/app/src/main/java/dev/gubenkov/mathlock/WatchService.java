@@ -12,7 +12,26 @@ import android.view.accessibility.AccessibilityEvent;
 public class WatchService extends AccessibilityService {
     private long lastStart;
 
+    /**
+     * Систему спецвозможностей Android поднимает сам при загрузке, а BOOT_COMPLETED HyperOS до нас не доносит.
+     * Поэтому именно отсюда после загрузки стартует основная служба и ставится блокировка.
+     */
+    @Override protected void onServiceConnected() {
+        super.onServiceConnected();
+        Prefs p = new Prefs(this);
+        if (!p.enabled()) return;
+        if (!LockService.running) {
+            p.setLocked(true);
+            p.setScreenOffAt(0);
+            p.setNeedNow(p.needCorrect());
+            LockService.start(this);
+            LockService.showQuiz(this);
+        }
+    }
+
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
+        Prefs p0 = new Prefs(this);
+        if (p0.enabled() && !LockService.running) LockService.start(this);
         if (e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
         CharSequence pkg = e.getPackageName();
         if (pkg == null) return;

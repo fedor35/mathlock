@@ -22,6 +22,8 @@ import android.util.Log;
 public class LockService extends Service {
     private static final String TAG = "MathLock";
     private static final String CH = "lock";
+    /** Жива ли служба (процесс один, статики достаточно). */
+    static volatile boolean running;
 
     private final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable periodic = new Runnable() {
@@ -87,6 +89,7 @@ public class LockService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        running = true;
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CH, "Блокировка", NotificationManager.IMPORTANCE_MIN));
         PendingIntent pi = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
@@ -108,6 +111,6 @@ public class LockService extends Service {
         if (getSystemService(android.os.PowerManager.class).isInteractive()) schedulePeriodic();
         return START_STICKY;
     }
-    @Override public void onDestroy() { h.removeCallbacks(periodic); unregisterReceiver(screen); super.onDestroy(); }
+    @Override public void onDestroy() { running = false; h.removeCallbacks(periodic); unregisterReceiver(screen); super.onDestroy(); }
     @Override public IBinder onBind(Intent intent) { return null; }
 }
