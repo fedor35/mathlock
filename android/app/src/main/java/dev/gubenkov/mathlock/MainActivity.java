@@ -91,8 +91,31 @@ public class MainActivity extends Activity {
         root.addView(how);
     }
 
+    @Override protected void onNewIntent(Intent i) { super.onNewIntent(i); setIntent(i); }
+
     @Override protected void onResume() {
         super.onResume();
+        // Служебный вход для adb: am start -n …/.MainActivity --es wallpaper /sdcard/…jpg
+        // Служебный вход для adb: --es clip "текст" кладёт текст в буфер обмена (adb не умеет кириллицу) и закрывается.
+        String clip = getIntent().getStringExtra("clip");
+        if (clip != null) {
+            getIntent().removeExtra("clip");
+            getSystemService(android.content.ClipboardManager.class)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("text", clip));
+            finish();
+            return;
+        }
+        String wp = getIntent().getStringExtra("wallpaper");
+        android.util.Log.i("MathLock", "onResume wallpaper extra=" + wp);
+        if (wp != null) {
+            getIntent().removeExtra("wallpaper");
+            try (java.io.FileInputStream in = new java.io.FileInputStream(wp)) {
+                android.app.WallpaperManager wm = android.app.WallpaperManager.getInstance(this);
+                wm.setStream(in, null, true, android.app.WallpaperManager.FLAG_SYSTEM | android.app.WallpaperManager.FLAG_LOCK);
+                Toast.makeText(this, "Обои установлены", Toast.LENGTH_SHORT).show();
+                android.util.Log.i("MathLock", "wallpaper set OK");
+            } catch (Exception e) { Toast.makeText(this, "Обои: " + e, Toast.LENGTH_LONG).show(); android.util.Log.w("MathLock", "wallpaper", e); }
+        }
         refreshPerms();
         tvStat.setText("\nСтатистика: задано " + prefs.statAsked() + ", ошибок " + prefs.statWrong());
         if (prefs.enabled()) LockService.start(this);
