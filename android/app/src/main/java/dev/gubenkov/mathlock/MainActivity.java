@@ -24,7 +24,7 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
     private Prefs prefs;
     private LinearLayout perms;
-    private EditText etMin, etMax, etNeed, etGrace, etCode;
+    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount;
     private TextView tvStat;
 
     @Override protected void onCreate(Bundle b) {
@@ -59,6 +59,9 @@ public class MainActivity extends Activity {
         etMax = field("до", prefs.maxFactor(), root);
         etNeed = field("Правильных ответов для разблокировки", prefs.needCorrect(), root);
         etGrace = field("Не спрашивать, если экран гас меньше (сек)", prefs.graceSeconds(), root);
+        root.addView(label("Контрольные примеры во время игры"));
+        etInterval = field("Каждые N минут работы экрана (0 = выключить)", prefs.checkIntervalMin(), root);
+        etCheckCount = field("Примеров в контрольной проверке", prefs.checkCount(), root);
         root.addView(label("Родительский код (цифры; ввод вместо ответа снимает блокировку)"));
         etCode = new EditText(this);
         etCode.setInputType(InputType.TYPE_CLASS_NUMBER);
@@ -82,7 +85,9 @@ public class MainActivity extends Activity {
         how.setText("\nКак это работает: системную блокировку поставьте «Провести по экрану» (без PIN). "
                 + "Когда экран гаснет, телефон считается заблокированным; при включении поверх всего появляются примеры. "
                 + "Служба специальных возможностей возвращает примеры, если нажали «Домой». "
-                + "Если приложение остановится, телефон просто откроется без примеров: ничего не ломается.");
+                + "Если приложение остановится, телефон просто откроется без примеров: ничего не ломается.\n\n"
+                + "Настройки, центр безопасности и удаление приложений закрыты родительским кодом: при входе туда появляется экран кода, "
+                + "после ввода 10 минут можно работать свободно. Чтобы удалить приложение: ввести код, в Настройках снять администратора устройства, затем удалить.");
         root.addView(how);
     }
 
@@ -102,6 +107,11 @@ public class MainActivity extends Activity {
         PowerManager pm = getSystemService(PowerManager.class);
         permRow("Без ограничений батареи", pm.isIgnoringBatteryOptimizations(getPackageName()),
                 () -> startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()))));
+        android.app.admin.DevicePolicyManager dpm = getSystemService(android.app.admin.DevicePolicyManager.class);
+        permRow("Администратор устройства (защита от удаления)", dpm.isAdminActive(AdminReceiver.cn(this)),
+                () -> startActivity(new Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                        .putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, AdminReceiver.cn(this))
+                        .putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Чтобы ребёнок не смог удалить приложение. Снять: ввести родительский код, затем здесь же отключить.")));
         permRow("Владелец устройства (через adb, необязательно)", AdminReceiver.isOwner(this), null);
         TextView miui = new TextView(this);
         miui.setText("На MIUI дополнительно: в настройках приложения «Другие разрешения» → «Показывать на экране блокировки» и «Всплывающие окна в фоне», плюс «Автозапуск».");
@@ -157,6 +167,9 @@ public class MainActivity extends Activity {
         prefs.setFactors(min, max);
         prefs.setNeedCorrect(Math.max(1, Math.min(20, num(etNeed, 3))));
         prefs.setGraceSeconds(Math.max(0, num(etGrace, 20)));
+        prefs.setCheckIntervalMin(Math.max(0, num(etInterval, 30)));
+        prefs.setCheckCount(Math.max(1, Math.min(20, num(etCheckCount, 1))));
+        if (prefs.enabled()) LockService.start(this);
         String code = etCode.getText().toString().trim();
         if (!code.isEmpty() && !TextUtils.isDigitsOnly(code)) { Toast.makeText(this, "Код: только цифры", Toast.LENGTH_SHORT).show(); return; }
         prefs.setParentCode(code);

@@ -29,7 +29,7 @@
             android:launchMode="singleInstance"
             android:taskAffinity="dev.gubenkov.mathlock.quiz"
             android:lockTaskMode="if_whitelisted"
-            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/QuizTheme"/>
 
         <service android:name=".LockService"

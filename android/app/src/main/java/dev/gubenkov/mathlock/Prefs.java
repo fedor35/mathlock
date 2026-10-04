@@ -36,6 +36,20 @@ public final class Prefs {
     public String parentCode() { return sp.getString("parent_code", "2580"); }
     public void setParentCode(String v) { sp.edit().putString("parent_code", v).apply(); }
 
+    /** Контрольный пример каждые N минут работы экрана (0 = выключено). */
+    public int checkIntervalMin() { return sp.getInt("check_interval_min", 30); }
+    public void setCheckIntervalMin(int v) { sp.edit().putInt("check_interval_min", v).apply(); }
+    /** Сколько примеров в контрольной проверке. */
+    public int checkCount() { return sp.getInt("check_count", 1); }
+    public void setCheckCount(int v) { sp.edit().putInt("check_count", v).apply(); }
+    /** Сколько примеров нужно сейчас (меняется для контрольной проверки). */
+    public int needNow() { return sp.getInt("need_now", needCorrect()); }
+    public void setNeedNow(int v) { sp.edit().putInt("need_now", v).apply(); }
+
+    /** До какого момента (elapsedRealtime) родитель может ходить по Настройкам без кода. */
+    public long guardPassUntil() { return sp.getLong("guard_pass_until", 0); }
+    public void setGuardPassUntil(long t) { sp.edit().putLong("guard_pass_until", t).apply(); }
+
     public int statAsked() { return sp.getInt("stat_asked", 0); }
     public int statWrong() { return sp.getInt("stat_wrong", 0); }
     public void bumpStat(boolean wrong) {

@@ -23,16 +23,40 @@ public class LockService extends Service {
     private static final String TAG = "MathLock";
     private static final String CH = "lock";
 
+    private final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable periodic = new Runnable() {
+        @Override public void run() {
+            Prefs p = new Prefs(LockService.this);
+            int min = p.checkIntervalMin();
+            if (!p.enabled() || min <= 0) return;
+            if (!p.locked()) {
+                p.setNeedNow(p.checkCount());
+                p.setScreenOffAt(0);
+                p.setLocked(true);
+                showQuiz(LockService.this);
+            }
+            h.postDelayed(this, min * 60_000L);
+        }
+    };
+
+    private void schedulePeriodic() {
+        h.removeCallbacks(periodic);
+        Prefs p = new Prefs(this);
+        if (p.enabled() && p.checkIntervalMin() > 0) h.postDelayed(periodic, p.checkIntervalMin() * 60_000L);
+    }
+
     private final BroadcastReceiver screen = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
             Prefs p = new Prefs(c);
             String act = i.getAction();
             if (Intent.ACTION_SCREEN_OFF.equals(act)) {
+                h.removeCallbacks(periodic);
                 if (p.enabled()) {
-                    if (!p.locked()) p.setScreenOffAt(SystemClock.elapsedRealtime());
+                    if (!p.locked()) { p.setScreenOffAt(SystemClock.elapsedRealtime()); p.setNeedNow(p.needCorrect()); }
                     p.setLocked(true);
                 }
             } else if (Intent.ACTION_SCREEN_ON.equals(act) || Intent.ACTION_USER_PRESENT.equals(act)) {
+                if (Intent.ACTION_SCREEN_ON.equals(act)) schedulePeriodic();
                 maybeShowQuiz(c);
             }
         }
@@ -79,7 +103,11 @@ public class LockService extends Service {
         registerReceiver(screen, f);
     }
 
-    @Override public int onStartCommand(Intent intent, int flags, int startId) { return START_STICKY; }
-    @Override public void onDestroy() { unregisterReceiver(screen); super.onDestroy(); }
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        // Вызывается и после «Сохранить» в настройках: перечитать интервал.
+        if (getSystemService(android.os.PowerManager.class).isInteractive()) schedulePeriodic();
+        return START_STICKY;
+    }
+    @Override public void onDestroy() { h.removeCallbacks(periodic); unregisterReceiver(screen); super.onDestroy(); }
     @Override public IBinder onBind(Intent intent) { return null; }
 }
