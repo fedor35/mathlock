@@ -1,0 +1,22 @@
+apply plugin: "com.android.application"
+
+android {
+    namespace "dev.gubenkov.mathlock"
+    compileSdk 34
+    defaultConfig {
+        applicationId "dev.gubenkov.mathlock"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+    }
+    buildTypes {
+        release { minifyEnabled false }
+        debug { }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+dependencies { }
