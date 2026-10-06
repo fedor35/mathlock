@@ -7,11 +7,29 @@ android {
         applicationId "dev.gubenkov.mathlock"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "0.1.0"
+        versionCode 2
+        versionName "0.2.0"
+    }
+    // Ключ релиза живёт вне репозитория; без MATHLOCK_KEYSTORE release соберётся неподписанным.
+    signingConfigs {
+        release {
+            def ks = System.getenv("MATHLOCK_KEYSTORE")
+            if (ks != null && !ks.isEmpty()) {
+                storeFile file(ks)
+                storePassword System.getenv("MATHLOCK_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("MATHLOCK_KEY_ALIAS") ?: "mathlock"
+                keyPassword System.getenv("MATHLOCK_KEY_PASSWORD") ?: System.getenv("MATHLOCK_KEYSTORE_PASSWORD")
+            }
+        }
     }
     buildTypes {
-        release { minifyEnabled false }
+        release {
+            minifyEnabled false
+            def ks = System.getenv("MATHLOCK_KEYSTORE")
+            if (ks != null && !ks.isEmpty()) {
+                signingConfig signingConfigs.release
+            }
+        }
         debug { }
     }
     compileOptions {
