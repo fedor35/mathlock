@@ -36,7 +36,9 @@ public class QuizActivity extends Activity {
         super.onCreate(b);
         prefs = new Prefs(this);
         setShowWhenLocked(true);
-        setTurnScreenOn(true);
+        // Экран примеры сами НЕ включают: их показывают, когда экран уже зажгли
+        // кнопкой (SCREEN_ON). С turnScreenOn блокировка кнопкой тут же снова
+        // зажигала экран — квиз запускался вдогонку гашению.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         KeyguardManager km = getSystemService(KeyguardManager.class);

@@ -47,7 +47,7 @@ public class WatchService extends AccessibilityService {
             return;
         }
         // Телефон открыт, но ребёнок полез туда, где можно снять защиту: Настройки, центр безопасности, удаление.
-        if (isGuarded(s) && now > p.guardPassUntil()) {
+        if (isGuarded(s) && now > p.guardPassUntil() && LockService.screenOn(this)) {
             if (now - lastStart < 700) return;
             lastStart = now;
             startActivity(new Intent(this, QuizActivity.class)

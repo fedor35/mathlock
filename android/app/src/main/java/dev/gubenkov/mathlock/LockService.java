@@ -76,7 +76,16 @@ public class LockService extends Service {
         showQuiz(c);
     }
 
+    /** Экран горит? Пока он погашен, примеры не показываем — их покажет SCREEN_ON. */
+    static boolean screenOn(Context c) {
+        android.os.PowerManager pm = c.getSystemService(android.os.PowerManager.class);
+        return pm == null || pm.isInteractive();
+    }
+
     static void showQuiz(Context c) {
+        // После гашения кнопкой приходят события окон (WatchService) и onStop квиза —
+        // запуск квиза в этот момент будил телефон.
+        if (!screenOn(c)) { Log.d(TAG, "screen off, quiz postponed to SCREEN_ON"); return; }
         Intent q = new Intent(c, QuizActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         try { c.startActivity(q); } catch (Exception e) { Log.w(TAG, "cannot start quiz", e); }
