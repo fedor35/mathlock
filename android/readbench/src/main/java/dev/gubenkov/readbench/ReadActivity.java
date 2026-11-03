@@ -104,6 +104,8 @@ public class ReadActivity extends Activity {
         });
         next.setOnClickListener(v -> { recording = false; idx = (idx + 1) % texts.size(); show(); });
         listen.setOnClickListener(v -> listen());
+        // папки создаёт само приложение: созданные через adb (владелец shell) оно не читает
+        new File(dir(), "tts").mkdirs(); new File(dir(), "recordings").mkdirs();
         loadTexts();
         idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
         show();
@@ -145,7 +147,7 @@ public class ReadActivity extends Activity {
         cur = new ReadingText(texts.get(idx).optString("text"));
         lastResult = null; lastAudio = null; lastLetterFrames = null;
         me.setEnabled(false); compare.setEnabled(false);
-        status.setText("Нажми «Читать» и прочитай вслух");
+        status.setText("Нажми «Читать» и прочитай вслух.\nНе знаешь слово — нажми на него");
         render();
     }
 
@@ -162,7 +164,7 @@ public class ReadActivity extends Activity {
                 sb.setSpan(new ForegroundColorSpan(SYL[s++ % 2]), st, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 if (pos < wd.end && cur.source.charAt(pos) == '-') pos++;
             }
-            if (lastResult != null && lastAudio != null && lastResult.hypFirst[w] >= 0) {
+            {   // слово нажимается всегда: прочитанное — «ты → как надо», ещё не прочитанное — «как надо»
                 final int ww = w;
                 sb.setSpan(new ClickableSpan() {
                     @Override public void onClick(View v) { playWord(ww); }
@@ -264,25 +266,57 @@ public class ReadActivity extends Activity {
     }
 
     void listen() {
-        File d = new File(dir(), "tts");
-        File[] fs = d.listFiles((x, n) -> n.startsWith(curId() + "."));
-        if (fs == null || fs.length == 0) { status.setText("Озвучки для этого текста пока нет"); return; }
-        java.util.Arrays.sort(fs);
-        File f = fs[voiceIdx++ % fs.length];
+        File[] fs = refFiles();
+        if (fs.length == 0) { status.setText("Озвучки для этого текста пока нет"); return; }
+        File f = fs[Math.floorMod(++voiceIdx, fs.length)];
         try {
             if (player != null) player.release();
             player = new MediaPlayer(); player.setDataSource(f.getPath()); player.prepare(); player.start();
-            status.setText("🔊 " + f.getName().split("\\.")[1]);
+            status.setText("🔊 " + voiceName(f));
         } catch (Exception e) { status.setText("ошибка воспроизведения: " + e); }
     }
 
     /** Своё слово: от первой до последней буквы, сопоставленных ему, с запасом 0,15/0,25 с. */
     void playWord(int w) {
-        if (lastResult == null || lastLetterFrames == null) return;
+        Runnable ref = () -> playRefWord(w);
+        if (lastResult == null || lastLetterFrames == null || lastAudio == null) { ref.run(); return; }
         int a = lastResult.hypFirst[w], b = lastResult.hypLast[w];
-        if (a < 0 || b >= lastLetterFrames.length) return;
+        if (a < 0 || b >= lastLetterFrames.length) { ref.run(); return; }
         float t0 = lastLetterFrames[a] * StreamingRecognizer.FRAME_SEC - 0.15f, t1 = lastLetterFrames[b] * StreamingRecognizer.FRAME_SEC + 0.25f;
-        playMine(Math.max(0, (int) (t0 * SR)), Math.min(lastAudio.length, (int) (t1 * SR)), null);
+        playMine(Math.max(0, (int) (t0 * SR)), Math.min(lastAudio.length, (int) (t1 * SR)), ref);
+    }
+
+    /** Эталонное слово: tts/<id>.<голос>.json хранит [t0,t1] каждого слова (ml/word_times.py). */
+    void playRefWord(int w) {
+        File[] fs = refFiles();
+        if (fs.length == 0) { status.setText("Озвучки для этого текста пока нет"); return; }
+        File f = fs[Math.floorMod(voiceIdx, fs.length)];
+        try {
+            File jf = new File(f.getPath().replaceAll("\\.(ogg|wav)$", ".json"));
+            org.json.JSONArray ws = new JSONObject(new String(java.nio.file.Files.readAllBytes(jf.toPath()), StandardCharsets.UTF_8)).getJSONArray("words");
+            if (w >= ws.length()) return;
+            double t0 = Math.max(0, ws.getJSONArray(w).getDouble(0) - 0.1), t1 = ws.getJSONArray(w).getDouble(1) + 0.15;
+            if (player != null) player.release();
+            player = new MediaPlayer(); player.setDataSource(f.getPath()); player.prepare();
+            player.seekTo((int) (t0 * 1000)); player.start();
+            final MediaPlayer p = player;
+            textView.postDelayed(() -> { try { if (p == player && p.isPlaying()) p.pause(); } catch (Exception ignored) {} }, (long) ((t1 - t0) * 1000));
+            status.setText("🔊 Как надо: " + cur.words.get(w).display + " (" + voiceName(f) + ")");
+        } catch (Exception e) { status.setText("нет разметки слов: " + e.getMessage()); }
+    }
+
+    static String voiceName(File f) {
+        String v = f.getName().split("\\.")[1];
+        switch (v) {
+            case "skazochnik": return "Сказочник"; case "devochka": return "Девочка"; case "malchik": return "Мальчик";
+            case "velikan": return "Великан"; case "feya": return "Фея"; default: return v;
+        }
+    }
+
+    File[] refFiles() {
+        File[] fs = new File(dir(), "tts").listFiles((x, n) -> n.startsWith(curId() + ".") && (n.endsWith(".ogg") || n.endsWith(".wav")));
+        if (fs == null) return new File[0];
+        java.util.Arrays.sort(fs); return fs;
     }
 
     void playMine(int from, int to, Runnable then) {
