@@ -40,6 +40,21 @@ public final class MelFrontend {
 
     public static int frames(int samples) { return samples < N_FFT ? 0 : (samples - N_FFT) / HOP + 1; }
 
+    /** Один кадр (N_FFT отсчётов с позиции off) -> out[N_MELS]. */
+    public void frame(float[] pcm, int off, float[] out, float[] buf, float[] pow) {
+        for (int n = 0; n < N_FFT; n++) buf[n] = pcm[off + n] * window[n];
+        for (int k = 0; k < N_FREQ; k++) {
+            float re = 0, im = 0; int b = k * N_FFT;
+            for (int n = 0; n < N_FFT; n++) { re += buf[n] * cos[b + n]; im -= buf[n] * sin[b + n]; }
+            pow[k] = re * re + im * im;
+        }
+        for (int m = 0; m < N_MELS; m++) {
+            float s = 0; float[] fb = fbank[m];
+            for (int k = 0; k < N_FREQ; k++) s += fb[k] * pow[k];
+            out[m] = (float) Math.log(Math.min(1e9f, Math.max(1e-9f, s)));
+        }
+    }
+
     /** Возвращает [N_MELS * outFrames] в раскладке [mel][frame]; хвост после реальных кадров = LOG_FLOOR. */
     public float[] compute(float[] pcm, int samples, int outFrames) {
         int nf = Math.min(frames(samples), outFrames);

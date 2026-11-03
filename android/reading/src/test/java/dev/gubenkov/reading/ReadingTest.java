@@ -68,4 +68,11 @@ public class ReadingTest {
         assertTrue(new ReadingMatcher().match(new ReadingText("Ко́т спи́т на ди́ване."), "кот спит надиване", true).complete);
         assertTrue(new ReadingMatcher().match(new ReadingText("Мы́ шли́ в ле́с."), "мы шли лес", true).complete);
     }
+
+    @Test public void partialLastWordNotComplete() {
+        ReadingMatcher.Result r = new ReadingMatcher().match(new ReadingText("Мы́ игра́ли во дворе́."), "мы играли во д", false);
+        assertFalse(r.complete);
+        assertEquals(ReadingMatcher.State.PENDING, r.states[3]);
+        assertTrue(new ReadingMatcher().match(new ReadingText("Мы́ игра́ли во дворе́."), "мы играли во дворе", false).complete);
+    }
 }

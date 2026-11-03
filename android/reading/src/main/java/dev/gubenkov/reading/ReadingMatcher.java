@@ -65,12 +65,14 @@ public final class ReadingMatcher {
             }
         }
         int progress = bi == 0 ? 0 : wordOf[bi - 1] + 1;
+        // слово, на середине которого оборвался поток, ещё не прочитано
+        boolean partial = !finalPass && bi > 0 && bi < n && wordOf[bi] == wordOf[bi - 1];
         State[] st = new State[W];
         boolean all = true;
         for (int w = 0; w < W; w++) {
             ReadingText.Word wd = text.words.get(w);
             int len = wd.letters.replace("-", "").length();
-            if (w >= progress) { st[w] = State.PENDING; all = false; continue; }
+            if (w >= progress || (partial && w == progress - 1)) { st[w] = State.PENDING; all = false; continue; }
             float norm = cost[w] / Math.max(1, len);
             boolean ok = norm <= wordTolerance || (len <= 2 && cost[w] <= DEL_END && w + 1 < progress);
             st[w] = ok ? State.OK : State.WRONG;

@@ -5,11 +5,12 @@
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         <!-- QNN HTP грузит libcdsprpc.so из /vendor -->
         <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
-        <activity android:name=".BenchActivity" android:exported="true">
+        <activity android:name=".ReadActivity" android:exported="true" android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity android:name=".BenchActivity" android:exported="true"/>
     </application>
 </manifest>
