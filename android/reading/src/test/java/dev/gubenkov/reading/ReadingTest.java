@@ -60,12 +60,12 @@ public class ReadingTest {
     }
 
     @Test public void skippedWordRejected() {
-        ReadingMatcher.State[] s = st("Ко́т спи́т на ди́ване.", "кот на диване", true);
+        ReadingMatcher.State[] s = st("Ко́т спи́т на дива́не.", "кот на диване", true);
         assertEquals(ReadingMatcher.State.WRONG, s[1]);
     }
 
     @Test public void shortPrepositionForgiven() {
-        assertTrue(new ReadingMatcher().match(new ReadingText("Ко́т спи́т на ди́ване."), "кот спит надиване", true).complete);
+        assertTrue(new ReadingMatcher().match(new ReadingText("Ко́т спи́т на дива́не."), "кот спит надиване", true).complete);
         assertTrue(new ReadingMatcher().match(new ReadingText("Мы́ шли́ в ле́с."), "мы шли лес", true).complete);
     }
 
