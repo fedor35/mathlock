@@ -9,10 +9,13 @@ import java.nio.FloatBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
-/** GigaAM-v3 CTC (символы) в ONNX: feats [1,64,T] -> logp [1,U,34], U = T/4 (после свёрток). */
+/**
+ * CTC-модель в ONNX по манифесту AsrModelSpec. Сейчас — GigaAM-v3 CTC (символы):
+ * feats [1,64,T] -> logp [1,U,34], U = T/4. Словарь и blank берутся из манифеста.
+ */
 public final class CtcModel implements AutoCloseable {
-    public static final String VOCAB = " абвгдежзийклмнопрстуфхцчшщъыьэюя";
-    public static final int BLANK = VOCAB.length(); // 33
+    /** Словарь GigaAM-v3 ctc — по умолчанию, если манифеста нет (стенд). */
+    public static final String[] GIGAAM_VOCAB = " абвгдежзийклмнопрстуфхцчшщъыьэюя".split("(?!^)");
 
     public enum Backend { CPU, QNN_HTP }
 
@@ -21,9 +24,23 @@ public final class CtcModel implements AutoCloseable {
     private final boolean staticT;
     public final int frames; // фиксированное T для статической модели, 0 — динамическая
     public final Backend backend;
+    private final String[] vocab;
+    private final int blank;
 
     /** cacheDir — куда класть скомпилированный контекст QNN (первый запуск долгий, потом быстрый). */
     public CtcModel(String path, Backend backend, int staticFrames, String cacheDir) throws OrtException {
+        this(path, backend, staticFrames, cacheDir, GIGAAM_VOCAB, GIGAAM_VOCAB.length);
+    }
+
+    /** Модель по манифесту: файл выбирается под бэкенд (CPU — динамическая, HTP — статическая). */
+    public static CtcModel open(AsrModelSpec spec, java.io.File dir, Backend backend, boolean htpFp16, String cacheDir) throws OrtException {
+        String f = backend == Backend.CPU ? spec.fileCpu : (htpFp16 ? spec.fileHtpFp16 : spec.fileHtpInt);
+        if (f == null) throw new IllegalArgumentException(spec.id + ": нет файла для " + backend);
+        return new CtcModel(new java.io.File(dir, f).getPath(), backend, backend == Backend.CPU ? 0 : spec.staticFrames, cacheDir, spec.vocab, spec.blank);
+    }
+
+    public CtcModel(String path, Backend backend, int staticFrames, String cacheDir, String[] vocab, int blank) throws OrtException {
+        this.vocab = vocab; this.blank = blank;
         this.backend = backend;
         this.frames = staticFrames;
         this.staticT = staticFrames > 0;
@@ -66,12 +83,14 @@ public final class CtcModel implements AutoCloseable {
         }
     }
 
-    public static String greedy(float[][] logp, int validFrames) {
+    public String greedy(float[][] logp, int validFrames) { return greedy(logp, validFrames, vocab, blank); }
+
+    public static String greedy(float[][] logp, int validFrames, String[] vocab, int blank) {
         StringBuilder sb = new StringBuilder(); int prev = -1;
         for (int t = 0; t < Math.min(validFrames, logp.length); t++) {
             int best = 0; float bv = logp[t][0];
             for (int c = 1; c < logp[t].length; c++) if (logp[t][c] > bv) { bv = logp[t][c]; best = c; }
-            if (best != prev && best != BLANK) sb.append(VOCAB.charAt(best));
+            if (best != prev && best != blank) sb.append(vocab[best]);
             prev = best;
         }
         return sb.toString().replaceAll(" +", " ").trim();

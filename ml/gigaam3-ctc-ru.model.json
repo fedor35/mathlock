@@ -1,0 +1,59 @@
+{
+ "id": "gigaam3-ctc-ru",
+ "name": "GigaAM-v3 CTC (Сбер, MIT)",
+ "langs": [
+  "ru"
+ ],
+ "units": "letters",
+ "frontend": {
+  "type": "logmel",
+  "n_mels": 64,
+  "n_fft": 320,
+  "hop": 160,
+  "mel": "htk",
+  "center": false
+ },
+ "vocab": [
+  " ",
+  "а",
+  "б",
+  "в",
+  "г",
+  "д",
+  "е",
+  "ж",
+  "з",
+  "и",
+  "й",
+  "к",
+  "л",
+  "м",
+  "н",
+  "о",
+  "п",
+  "р",
+  "с",
+  "т",
+  "у",
+  "ф",
+  "х",
+  "ц",
+  "ч",
+  "ш",
+  "щ",
+  "ъ",
+  "ы",
+  "ь",
+  "э",
+  "ю",
+  "я"
+ ],
+ "blank": 33,
+ "subsampling": 4,
+ "static_frames": 1600,
+ "files": {
+  "cpu": "gigaam_ctc_int8.onnx",
+  "htp_fp16": "gigaam_ctc_T1600_fp32.onnx",
+  "htp_int": "gigaam_ctc_T1600_qdq.onnx"
+ }
+}

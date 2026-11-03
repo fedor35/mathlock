@@ -86,7 +86,7 @@ public class BenchActivity extends Activity {
                 long a = System.nanoTime();
                 float[][] lp = m.run(feats, nf);
                 best = Math.min(best, System.nanoTime() - a);
-                txt = CtcModel.greedy(lp, CtcModel.encFrames(MelFrontend.frames(pcm.length)));
+                txt = m.greedy(lp, CtcModel.encFrames(MelFrontend.frames(pcm.length)));
             }
             say(String.format("%s %s: загрузка %.1f с, мел %.0f мс, прогон %.0f мс (аудио %.1f с, окно %s)\n  → %s",
                     file, be, (t1 - t0) / 1e9, (t2 - t1) / 1e6, best / 1e6, pcm.length / 16000f,
