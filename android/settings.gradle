@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "MathLock"
-include(":app")
+include(":app", ":reading", ":readbench")
