@@ -105,7 +105,7 @@ public class ReadActivity extends Activity {
         next.setOnClickListener(v -> { recording = false; idx = (idx + 1) % texts.size(); show(); });
         listen.setOnClickListener(v -> listen());
         // папки создаёт само приложение: созданные через adb (владелец shell) оно не читает
-        new File(dir(), "tts").mkdirs(); new File(dir(), "recordings").mkdirs();
+        new File(dir(), "tts/cheer").mkdirs(); new File(dir(), "recordings").mkdirs();
         loadTexts();
         idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
         show();
@@ -243,7 +243,28 @@ public class ReadActivity extends Activity {
             status.setText((ok ? "Молодец! Всё прочитано верно 🎉" : "Почти! Красные слова прочитай ещё раз")
                     + "\nНажми на слово — услышишь, как ты его прочитал");
             debug.setText(h);
+            if (ok) celebrate();
         });
+    }
+
+    final java.util.Random rnd = new java.util.Random();
+
+    /** Успех: случайный игровой звук (Sounds), сразу за ним — случайный возглас из tts/cheer/*.ogg («すごーい！», «やったー！»…). */
+    void celebrate() {
+        int sr = 44100; short[] pcm = dev.gubenkov.reading.Sounds.randomSuccess(sr, rnd);
+        File[] cheer = new File(dir(), "tts/cheer").listFiles((x, n) -> n.endsWith(".ogg"));
+        Runnable then = null;
+        if (cheer != null && cheer.length > 0) { final File c = cheer[rnd.nextInt(cheer.length)]; then = () -> playFile(c); }
+        Log.i(TAG, "успех: звук " + pcm.length * 1000 / sr + " мс, возглас " + (cheer == null ? 0 : cheer.length) + " файлов");
+        playPcm(pcm, sr, then);
+    }
+
+    void playFile(File f) {
+        Log.i(TAG, "играю " + f.getName());
+        try {
+            if (player != null) player.release();
+            player = new MediaPlayer(); player.setDataSource(f.getPath()); player.prepare(); player.start();
+        } catch (Exception e) { Log.w(TAG, "praise " + f + ": " + e); }
     }
 
     void save(StreamingRecognizer rec, String hyp, ReadingMatcher.Result r, boolean ok) {
@@ -296,13 +317,73 @@ public class ReadActivity extends Activity {
             org.json.JSONArray ws = new JSONObject(new String(java.nio.file.Files.readAllBytes(jf.toPath()), StandardCharsets.UTF_8)).getJSONArray("words");
             if (w >= ws.length()) return;
             double t0 = Math.max(0, ws.getJSONArray(w).getDouble(0) - 0.1), t1 = ws.getJSONArray(w).getDouble(1) + 0.15;
-            if (player != null) player.release();
-            player = new MediaPlayer(); player.setDataSource(f.getPath()); player.prepare();
-            player.seekTo((int) (t0 * 1000)); player.start();
-            final MediaPlayer p = player;
-            textView.postDelayed(() -> { try { if (p == player && p.isPlaying()) p.pause(); } catch (Exception ignored) {} }, (long) ((t1 - t0) * 1000));
+            // MediaPlayer.seekTo по ogg/opus на части устройств игнорируется (играет с начала) — режем декодированный PCM
+            Pcm a = decode(f);
+            int from = (int) (t0 * a.sr), to = Math.min(a.data.length, (int) (t1 * a.sr));
+            if (to <= from) return;
+            if (player != null && player.isPlaying()) player.pause();
+            playPcm(java.util.Arrays.copyOfRange(a.data, from, to), a.sr, null);
+            Log.i(TAG, String.format("эталон слова %d «%s» %.2f–%.2f с из %s", w, cur.words.get(w).display, t0, t1, f.getName()));
             status.setText("🔊 Как надо: " + cur.words.get(w).display + " (" + voiceName(f) + ")");
         } catch (Exception e) { status.setText("нет разметки слов: " + e.getMessage()); }
+    }
+
+    static final class Pcm { final short[] data; final int sr; Pcm(short[] d, int s) { data = d; sr = s; } }
+    final java.util.Map<String, Pcm> pcmCache = new java.util.HashMap<>();
+
+    /** ogg/opus (или wav) → PCM 16 бит моно через MediaExtractor + MediaCodec; кэш по пути. */
+    Pcm decode(File f) throws Exception {
+        Pcm c = pcmCache.get(f.getPath()); if (c != null) return c;
+        android.media.MediaExtractor ex = new android.media.MediaExtractor(); ex.setDataSource(f.getPath());
+        android.media.MediaFormat fmt = ex.getTrackFormat(0); ex.selectTrack(0);
+        android.media.MediaCodec dec = android.media.MediaCodec.createDecoderByType(fmt.getString(android.media.MediaFormat.KEY_MIME));
+        dec.configure(fmt, null, null, 0); dec.start();
+        int sr = fmt.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE), ch = fmt.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        android.media.MediaCodec.BufferInfo info = new android.media.MediaCodec.BufferInfo();
+        boolean inEnd = false;
+        while (true) {
+            if (!inEnd) {
+                int i = dec.dequeueInputBuffer(10000);
+                if (i >= 0) {
+                    int n = ex.readSampleData(dec.getInputBuffer(i), 0);
+                    if (n < 0) { dec.queueInputBuffer(i, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM); inEnd = true; }
+                    else { dec.queueInputBuffer(i, 0, n, ex.getSampleTime(), 0); ex.advance(); }
+                }
+            }
+            int o = dec.dequeueOutputBuffer(info, 10000);
+            if (o == android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                android.media.MediaFormat of = dec.getOutputFormat();
+                sr = of.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE); ch = of.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT);
+            } else if (o >= 0) {
+                ByteBuffer b = dec.getOutputBuffer(o); byte[] chunk = new byte[info.size]; b.position(info.offset); b.get(chunk); out.write(chunk);
+                dec.releaseOutputBuffer(o, false);
+                if ((info.flags & android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break;
+            }
+        }
+        dec.stop(); dec.release(); ex.release();
+        java.nio.ShortBuffer sb = ByteBuffer.wrap(out.toByteArray()).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer();
+        short[] all = new short[sb.remaining()]; sb.get(all);
+        short[] mono = new short[all.length / ch];
+        for (int i = 0; i < mono.length; i++) { int s = 0; for (int k = 0; k < ch; k++) s += all[i * ch + k]; mono[i] = (short) (s / ch); }
+        c = new Pcm(mono, sr); pcmCache.put(f.getPath(), c); return c;
+    }
+
+    void playPcm(short[] pcm, int sr, Runnable then) {
+        if (track != null) { try { track.stop(); } catch (Exception ignored) {} track.release(); }
+        track = new AudioTrack.Builder()
+                .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioFormat(new AudioFormat.Builder().setSampleRate(sr).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(Math.max(pcm.length * 2, 4096)).build();
+        track.write(pcm, 0, pcm.length);
+        if (then != null) {
+            track.setNotificationMarkerPosition(pcm.length - 1);
+            track.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
+                @Override public void onMarkerReached(AudioTrack t) { textView.postDelayed(then, 400); }
+                @Override public void onPeriodicNotification(AudioTrack t) { }
+            });
+        }
+        track.play();
     }
 
     static String voiceName(File f) {

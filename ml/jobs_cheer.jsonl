@@ -1,0 +1,24 @@
+{"id": "girl.wa", "text": "[surprise-wa] わあー！", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "girl.sugoi", "text": "すごーい！", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "girl.yatta", "text": "やったー！", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "girl.oh", "text": "[surprise-oh] おおー！", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "girl.ehehe", "text": "えへへ [laughter]", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "girl.kanpeki", "text": "かんぺき！", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "girl.wao", "text": "ワーオ！", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "girl.ah", "text": "[surprise-ah] あっ、すごい！", "instruct": "female, child, very high pitch", "n": 4}
+{"id": "teen.wa", "text": "[surprise-wa] わあー！", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "teen.sugoi", "text": "すごーい！", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "teen.yatta", "text": "やったー！", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "teen.oh", "text": "[surprise-oh] おおー！", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "teen.ehehe", "text": "えへへ [laughter]", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "teen.kanpeki", "text": "かんぺき！", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "teen.wao", "text": "ワーオ！", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "teen.ah", "text": "[surprise-ah] あっ、すごい！", "instruct": "female, teenager, high pitch", "n": 4}
+{"id": "boy.wa", "text": "[surprise-wa] わあー！", "instruct": "male, child, high pitch", "n": 4}
+{"id": "boy.sugoi", "text": "すごーい！", "instruct": "male, child, high pitch", "n": 4}
+{"id": "boy.yatta", "text": "やったー！", "instruct": "male, child, high pitch", "n": 4}
+{"id": "boy.oh", "text": "[surprise-oh] おおー！", "instruct": "male, child, high pitch", "n": 4}
+{"id": "boy.ehehe", "text": "えへへ [laughter]", "instruct": "male, child, high pitch", "n": 4}
+{"id": "boy.kanpeki", "text": "かんぺき！", "instruct": "male, child, high pitch", "n": 4}
+{"id": "boy.wao", "text": "ワーオ！", "instruct": "male, child, high pitch", "n": 4}
+{"id": "boy.ah", "text": "[surprise-ah] あっ、すごい！", "instruct": "male, child, high pitch", "n": 4}
