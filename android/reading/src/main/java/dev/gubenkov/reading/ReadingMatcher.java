@@ -17,7 +17,9 @@ public final class ReadingMatcher {
         public final float[] wordCost;
         public final int progressWords; // сколько слов от начала «пройдено» (дальше — непрочитанное)
         public final boolean complete;
-        Result(State[] s, float[] c, int p, boolean done) { states = s; wordCost = c; progressWords = p; complete = done; }
+        /** Индексы букв гипотезы (без пробелов), сопоставленных слову: [первая, последняя] или -1. */
+        public final int[] hypFirst, hypLast;
+        Result(State[] s, float[] c, int p, boolean done, int[] hf, int[] hl) { states = s; wordCost = c; progressWords = p; complete = done; hypFirst = hf; hypLast = hl; }
     }
 
     static float sub(LanguageSpec L, char a, char b) { return a == b ? 0 : L.similar(a, b) < 1f ? SUB_SIMILAR : SUB; }
@@ -55,13 +57,19 @@ public final class ReadingMatcher {
             for (int i = 0; i <= n; i++) { float c = D[i][m] + 0.02f * (n - i); if (c < best) { best = c; bi = i; } }
         }
         float[] cost = new float[W];
+        int[] hf = new int[W], hl = new int[W];
+        java.util.Arrays.fill(hf, -1); java.util.Arrays.fill(hl, -1);
         int i = bi, j = m;
         while (i > 0 || j > 0) {
             byte b = B[i][j];
-            if (i > 0 && j > 0 && b == 0) { cost[wordOf[i - 1]] += sub(L, t.charAt(i - 1), h.charAt(j - 1)); i--; j--; }
+            if (i > 0 && j > 0 && b == 0) {
+                int w = wordOf[i - 1]; cost[w] += sub(L, t.charAt(i - 1), h.charAt(j - 1));
+                hf[w] = j - 1; if (hl[w] < 0) hl[w] = j - 1; i--; j--;
+            }
             else if (i > 0 && (j == 0 || b == 1)) { cost[wordOf[i - 1]] += del[i - 1]; i--; }
             else { // вставку относим к слову перед ней
-                if (i > 0) cost[wordOf[i - 1]] += INS * 0.5f; j--;
+                if (i > 0) { int w = wordOf[i - 1]; cost[w] += INS * 0.5f; hf[w] = j - 1; if (hl[w] < 0) hl[w] = j - 1; }
+                j--;
             }
         }
         int progress = bi == 0 ? 0 : wordOf[bi - 1] + 1;
@@ -83,6 +91,6 @@ public final class ReadingMatcher {
             int last = progress - 1;
             if (st[last] == State.WRONG) st[last] = State.PENDING;
         }
-        return new Result(st, cost, progress, all && progress == W);
+        return new Result(st, cost, progress, all && progress == W, hf, hl);
     }
 }

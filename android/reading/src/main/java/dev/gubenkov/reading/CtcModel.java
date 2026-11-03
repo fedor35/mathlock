@@ -85,6 +85,21 @@ public final class CtcModel implements AutoCloseable {
 
     public String greedy(float[][] logp, int validFrames) { return greedy(logp, validFrames, vocab, blank); }
 
+    /** Как greedy, но ещё кадр (40 мс) каждой непробельной буквы — для времени слов. */
+    public String greedy(float[][] logp, int validFrames, java.util.List<Integer> letterFrames) {
+        StringBuilder sb = new StringBuilder(); int prev = -1;
+        for (int t = 0; t < Math.min(validFrames, logp.length); t++) {
+            int best = 0; float bv = logp[t][0];
+            for (int c = 1; c < logp[t].length; c++) if (logp[t][c] > bv) { bv = logp[t][c]; best = c; }
+            if (best != prev && best != blank) {
+                String u = vocab[best]; sb.append(u);
+                if (!u.equals(" ")) for (int k = 0; k < u.length(); k++) letterFrames.add(t);
+            }
+            prev = best;
+        }
+        return sb.toString().replaceAll(" +", " ").trim();
+    }
+
     public static String greedy(float[][] logp, int validFrames, String[] vocab, int blank) {
         StringBuilder sb = new StringBuilder(); int prev = -1;
         for (int t = 0; t < Math.min(validFrames, logp.length); t++) {

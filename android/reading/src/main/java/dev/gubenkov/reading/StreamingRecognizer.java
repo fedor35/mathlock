@@ -60,8 +60,13 @@ public final class StreamingRecognizer {
         float[][] all = new float[committed.size() + lastLive.length][];
         for (int i = 0; i < committed.size(); i++) all[i] = committed.get(i);
         System.arraycopy(lastLive, 0, all, committed.size(), lastLive.length);
-        return model.greedy(all, all.length);
+        letterFrames.clear();
+        return model.greedy(all, all.length, letterFrames);
     }
+
+    /** Кадр (40 мс от начала записи) каждой буквы последней гипотезы, без пробелов. */
+    public final List<Integer> letterFrames = new ArrayList<>();
+    public static final float FRAME_SEC = 0.04f;
 
     private float[][] runWindow(int start, int end) throws ai.onnxruntime.OrtException {
         int n = end - start;

@@ -5,14 +5,20 @@ import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.media.AudioAttributes;
 import android.media.AudioFormat;
+import android.media.AudioTrack;
 import android.media.AudioRecord;
 import android.media.MediaPlayer;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.method.LinkMovementMethod;
 import android.text.style.BackgroundColorSpan;
+import android.text.style.ClickableSpan;
+import android.text.TextPaint;
+import android.view.View;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.UnderlineSpan;
 import android.util.Log;
@@ -58,6 +64,11 @@ public class ReadActivity extends Activity {
     volatile boolean recording;
     MediaPlayer player;
     int voiceIdx = 0;
+    // последнее чтение: звук и время каждой буквы гипотезы — для «послушать себя» и нажатия на слово
+    float[] lastAudio;
+    int[] lastLetterFrames;
+    AudioTrack track;
+    Button me, compare;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -72,7 +83,15 @@ public class ReadActivity extends Activity {
         Button next = new Button(this); next.setText("Дальше ▶");
         row.addView(read, new LinearLayout.LayoutParams(0, -2, 1)); row.addView(listen, new LinearLayout.LayoutParams(0, -2, 1));
         row.addView(next, new LinearLayout.LayoutParams(0, -2, 1));
-        l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row); l.addView(debug);
+        LinearLayout row2 = new LinearLayout(this);
+        me = new Button(this); me.setText("🗣 Я");
+        compare = new Button(this); compare.setText("⇄ Сравнить");
+        row2.addView(me, new LinearLayout.LayoutParams(0, -2, 1)); row2.addView(compare, new LinearLayout.LayoutParams(0, -2, 1));
+        me.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, null));
+        compare.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, this::listen));
+        textView.setMovementMethod(LinkMovementMethod.getInstance());
+        textView.setHighlightColor(Color.TRANSPARENT);
+        l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row2); l.addView(row); l.addView(debug);
         l.setBackgroundColor(Color.rgb(255, 252, 240));
         setContentView(l);
 
@@ -124,7 +143,8 @@ public class ReadActivity extends Activity {
 
     void show() {
         cur = new ReadingText(texts.get(idx).optString("text"));
-        lastResult = null;
+        lastResult = null; lastAudio = null; lastLetterFrames = null;
+        me.setEnabled(false); compare.setEnabled(false);
         status.setText("Нажми «Читать» и прочитай вслух");
         render();
     }
@@ -141,6 +161,13 @@ public class ReadActivity extends Activity {
                 while (pos < wd.end && (cur.source.charAt(pos) == ReadingText.ACUTE)) pos++;
                 sb.setSpan(new ForegroundColorSpan(SYL[s++ % 2]), st, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 if (pos < wd.end && cur.source.charAt(pos) == '-') pos++;
+            }
+            if (lastResult != null && lastAudio != null && lastResult.hypFirst[w] >= 0) {
+                final int ww = w;
+                sb.setSpan(new ClickableSpan() {
+                    @Override public void onClick(View v) { playWord(ww); }
+                    @Override public void updateDrawState(TextPaint ds) { }
+                }, wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (lastResult != null) {
                 ReadingMatcher.State state = lastResult.states[w];
@@ -204,9 +231,15 @@ public class ReadActivity extends Activity {
         final boolean ok = fin.complete || done;
         final String h = hyp;
         save(rec, h, fin, ok);
+        final float[] audio = rec.audio();
+        final int[] lf = new int[rec.letterFrames.size()];
+        for (int i = 0; i < lf.length; i++) lf[i] = rec.letterFrames.get(i);
         runOnUiThread(() -> {
-            lastResult = fin; render();
-            status.setText(ok ? "Молодец! Всё прочитано верно 🎉" : "Почти! Красные слова прочитай ещё раз");
+            lastResult = fin; lastAudio = audio; lastLetterFrames = lf;
+            me.setEnabled(true); compare.setEnabled(true);
+            render();
+            status.setText((ok ? "Молодец! Всё прочитано верно 🎉" : "Почти! Красные слова прочитай ещё раз")
+                    + "\nНажми на слово — услышишь, как ты его прочитал");
             debug.setText(h);
         });
     }
@@ -243,9 +276,43 @@ public class ReadActivity extends Activity {
         } catch (Exception e) { status.setText("ошибка воспроизведения: " + e); }
     }
 
+    /** Своё слово: от первой до последней буквы, сопоставленных ему, с запасом 0,15/0,25 с. */
+    void playWord(int w) {
+        if (lastResult == null || lastLetterFrames == null) return;
+        int a = lastResult.hypFirst[w], b = lastResult.hypLast[w];
+        if (a < 0 || b >= lastLetterFrames.length) return;
+        float t0 = lastLetterFrames[a] * StreamingRecognizer.FRAME_SEC - 0.15f, t1 = lastLetterFrames[b] * StreamingRecognizer.FRAME_SEC + 0.25f;
+        playMine(Math.max(0, (int) (t0 * SR)), Math.min(lastAudio.length, (int) (t1 * SR)), null);
+    }
+
+    void playMine(int from, int to, Runnable then) {
+        if (lastAudio == null || to <= from) { status.setText("Сначала прочитай текст"); return; }
+        if (track != null) { try { track.stop(); } catch (Exception ignored) {} track.release(); }
+        short[] pcm = new short[to - from];
+        float peak = 1e-3f; for (int i = from; i < to; i++) peak = Math.max(peak, Math.abs(lastAudio[i]));
+        float g = Math.min(8f, 0.9f / peak); // тихую запись поднимаем
+        for (int i = 0; i < pcm.length; i++) pcm[i] = (short) Math.max(-32768, Math.min(32767, lastAudio[from + i] * g * 32767));
+        track = new AudioTrack.Builder()
+                .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioFormat(new AudioFormat.Builder().setSampleRate(SR).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(pcm.length * 2).build();
+        track.write(pcm, 0, pcm.length);
+        if (then != null) {
+            track.setNotificationMarkerPosition(pcm.length - 1);
+            track.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
+                @Override public void onMarkerReached(AudioTrack t) { textView.postDelayed(then, 400); }
+                @Override public void onPeriodicNotification(AudioTrack t) { }
+            });
+        }
+        track.play();
+        status.setText(then != null ? "🗣 Ты… потом 🔊 как надо" : "🗣 Твоё чтение");
+    }
+
     @Override public void onRequestPermissionsResult(int c, String[] p, int[] g) {
         if (g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) new Thread(this::readLoop).start();
     }
 
-    @Override protected void onDestroy() { recording = false; if (player != null) player.release(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        recording = false; if (player != null) player.release(); if (track != null) track.release(); super.onDestroy();
+    }
 }
