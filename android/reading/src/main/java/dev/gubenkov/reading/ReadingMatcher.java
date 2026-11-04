@@ -16,6 +16,12 @@ public final class ReadingMatcher {
      * (пропущенное «и»), — ошибка (Фёдор, 04.11). Частично услышанное («во» → «в» в «вдворе») прощается.
      */
     public boolean forgiveShortWords = true;
+    /**
+     * Строгие окончания: «жил» → «жили», «маленький» → «маленькие», «звёзды» → «звёзд» — ошибка, даже если по доле букв
+     * слово проходит (дети угадывают окончания; по живым записям 05.11 Вероника меняла окончание в ~2–4% слов).
+     * Не ошибка: лишние буквы — начало следующего слова (запинка «Тимур по… пошёл») или повтор хвоста; пропуск «й».
+     */
+    public boolean strictEndings = false;
 
     public enum State { PENDING, OK, WRONG }
 
@@ -26,7 +32,12 @@ public final class ReadingMatcher {
         public final boolean complete;
         /** Индексы букв гипотезы (без пробелов), сопоставленных слову: [первая, последняя] или -1. */
         public final int[] hypFirst, hypLast;
-        Result(State[] s, float[] c, int p, boolean done, int[] hf, int[] hl) { states = s; wordCost = c; progressWords = p; complete = done; hypFirst = hf; hypLast = hl; }
+        /**
+         * Засчитанное слово с подозрением на неверное окончание («жил» → «жили») — мягкая подсказка, в точность не идёт:
+         * безударные окончания распознавание путает и на правильной озвучке (+0,4% слов), см. {@link #strictEndings}.
+         */
+        public final boolean[] endingHint;
+        Result(State[] s, float[] c, int p, boolean done, int[] hf, int[] hl, boolean[] eh) { states = s; wordCost = c; progressWords = p; complete = done; hypFirst = hf; hypLast = hl; endingHint = eh; }
     }
 
     static float sub(LanguageSpec L, char a, char b) { return a == b ? 0 : L.similar(a, b) < 1f ? SUB_SIMILAR : SUB; }
@@ -53,9 +64,12 @@ public final class ReadingMatcher {
         String t = tb.toString();
         // пропуск последней буквы слова (окончание: купила→купил, шары→шар) — дороже обычного
         float[] del = new float[n];
-        for (int k = 0; k < n; k++) del[k] = prevOk(prev, wordOf[k]) ? 0f : (k + 1 == n || wordOf[k + 1] != wordOf[k]) ? DEL_END : DEL;
+        // конечная «й» в быстрой речи глотается («дымко[й]», «ровно[й]» у взрослого, 04.11) — обычная цена пропуска
+        for (int k = 0; k < n; k++) del[k] = prevOk(prev, wordOf[k]) ? 0f : (k + 1 == n || wordOf[k + 1] != wordOf[k]) && t.charAt(k) != 'й' ? DEL_END : DEL;
         StringBuilder hb = new StringBuilder();
-        for (char c : hypothesis.toCharArray()) { char x = L.normalize(c); if (x != 0) hb.append(x); }
+        // gap[j]: перед буквой j гипотезы был пробел (CTC отделил слово) — вставка после пробела не «окончание», а заминка/следующее слово
+        boolean[] gap = new boolean[hypothesis.length() + 1]; boolean sp = false;
+        for (char c : hypothesis.toCharArray()) { char x = L.normalize(c); if (x != 0) { gap[hb.length()] = sp; hb.append(x); sp = false; } else if (c == ' ') sp = true; }
         String h = hb.toString();
         int m = h.length();
         // D[i][j]: стоимость выравнивания t[0..i) c h[0..j)
@@ -74,6 +88,7 @@ public final class ReadingMatcher {
             for (int i = 0; i <= n; i++) { float c = D[i][m] + 0.02f * (n - i); if (c < best) { best = c; bi = i; } }
         }
         float[] cost = new float[W];
+        boolean[] endErr = new boolean[W];
         int[] hf = new int[W], hl = new int[W];
         java.util.Arrays.fill(hf, -1); java.util.Arrays.fill(hl, -1);
         int i = bi, j = m;
@@ -81,13 +96,31 @@ public final class ReadingMatcher {
             byte b = B[i][j];
             if (i > 0 && j > 0 && b == 0) {
                 int w = wordOf[i - 1]; cost[w] += sub(L, t.charAt(i - 1), h.charAt(j - 1));
+                // замена в окончании; похожие гласные (о/а, е/и, е/я, и/ы) — аканье и иканье, не ошибка: «лото» звучит «лота»
+                if (t.charAt(i - 1) != h.charAt(j - 1) && L.similar(t.charAt(i - 1), h.charAt(j - 1)) >= 1f && inEnding(wordOf, n, i - 1)
+                        && endingLetter(L, t.charAt(i - 1)) && endingLetter(L, h.charAt(j - 1))) endErr[w] = true;
                 hf[w] = j - 1; if (hl[w] < 0) hl[w] = j - 1; i--; j--;
             }
-            else if (i > 0 && (j == 0 || b == 1)) { cost[wordOf[i - 1]] += del[i - 1]; i--; }
+            else if (i > 0 && (j == 0 || b == 1)) {
+                cost[wordOf[i - 1]] += del[i - 1];
+                if (isLast(wordOf, n, i - 1) && L.isVowel(t.charAt(i - 1)) && del[i - 1] > 0 && wordLen(wordOf, n, i - 1) >= 3) endErr[wordOf[i - 1]] = true;
+                i--;
+            }
             else { // вставку относим к слову перед ней; длинную (перечитывание, «э-э-э») не штрафуем и в слово не включаем
                 int run = 0, j0 = j;
                 while (j > 0 && (i == 0 || B[i][j] == 2)) { j--; run++; }
-                if (i > 0 && run <= MAX_CHARGED_INS) { int w = wordOf[i - 1]; cost[w] += INS * 0.5f * run; hf[w] = j; if (hl[w] < 0) hl[w] = j0 - 1; }
+                if (i > 0 && run <= MAX_CHARGED_INS) {
+                    int w = wordOf[i - 1]; cost[w] += INS * 0.5f * run; hf[w] = j; if (hl[w] < 0) hl[w] = j0 - 1;
+                    // вставка сразу за последней буквой слова: «жил|и», «звёзд|ы» — окончание; «Тимур|по» (начало следующего) и «похожа|а» (повтор) — нет
+                    if (run <= 2 && isLast(wordOf, n, i - 1) && wordLen(wordOf, n, i - 1) >= 3) {
+                        String ins = h.substring(j, j0);
+                        boolean nextStart = i < n && t.startsWith(ins, i);
+                        int ws = i - 1; while (ws > 0 && wordOf[ws - 1] == wordOf[i - 1]) ws--;
+                        boolean repeat = t.substring(ws, i).endsWith(ins);
+                        boolean letters = true; for (char c : ins.toCharArray()) letters &= endingLetter(L, c);
+                        if (!nextStart && !repeat && letters && !gap[j]) endErr[w] = true;
+                    }
+                }
             }
         }
         int progress = bi == 0 ? 0 : wordOf[bi - 1] + 1;
@@ -100,7 +133,7 @@ public final class ReadingMatcher {
             int len = wd.letters.replace("-", "").length();
             if (w >= progress || (partial && w == progress - 1)) { st[w] = State.PENDING; all = false; continue; }
             float norm = cost[w] / Math.max(1, len);
-            boolean ok = norm <= wordTolerance || (forgiveShortWords && len <= 2 && (!hasVowel(L, wd.letters) || hf[w] >= 0) && cost[w] <= DEL_END && w + 1 < progress);
+            boolean ok = (norm <= wordTolerance && !(strictEndings && endErr[w])) || (forgiveShortWords && len <= 2 && (!hasVowel(L, wd.letters) || hf[w] >= 0) && cost[w] <= DEL_END && w + 1 < progress);
             st[w] = ok ? State.OK : State.WRONG;
             if (!ok) all = false;
         }
@@ -109,7 +142,9 @@ public final class ReadingMatcher {
             int last = progress - 1;
             if (st[last] == State.WRONG) st[last] = State.PENDING;
         }
-        if (prev == null) return new Result(st, cost, progress, all && progress == W, hf, hl);
+        boolean[] hint = new boolean[W];
+        for (int w = 0; w < W; w++) hint[w] = endErr[w] && st[w] == State.OK && !prevOk(prev, w);
+        if (prev == null) return new Result(st, cost, progress, all && progress == W, hf, hl, hint);
         // слияние с прошлой записью: зелёное остаётся зелёным, красное — красным, пока его не перечитали верно
         all = true;
         for (int w = 0; w < W; w++) {
@@ -117,8 +152,16 @@ public final class ReadingMatcher {
             if (prev.states[w] == State.WRONG && st[w] != State.OK) st[w] = State.WRONG;
             if (st[w] != State.OK) all = false;
         }
-        return new Result(st, cost, Math.max(progress, prev.progressWords), all, hf, hl);
+        for (int w = 0; w < W; w++) if (st[w] != State.OK) hint[w] = false;
+        return new Result(st, cost, Math.max(progress, prev.progressWords), all, hf, hl, hint);
     }
+
+    /** Буква окончания: гласная, «й» или «м»/«х»/«в» (-ом, -ых, -ов) — согласные внутри основы так не считаем. */
+    static boolean endingLetter(LanguageSpec L, char c) { return L.isVowel(c) || c == 'й' || c == 'м' || c == 'х' || c == 'в'; }
+    static boolean isLast(int[] wordOf, int n, int k) { return k + 1 == n || wordOf[k + 1] != wordOf[k]; }
+    static int wordLen(int[] wordOf, int n, int k) { int a = k, b = k; while (a > 0 && wordOf[a - 1] == wordOf[k]) a--; while (b + 1 < n && wordOf[b + 1] == wordOf[k]) b++; return b - a + 1; }
+    /** Позиция k — среди двух последних букв слова длиной от 3. */
+    static boolean inEnding(int[] wordOf, int n, int k) { int len = wordLen(wordOf, n, k); return len >= 3 && (isLast(wordOf, n, k) || isLast(wordOf, n, k + 1)); }
 
     static boolean hasVowel(LanguageSpec L, String s) { for (int i = 0; i < s.length(); i++) if (L.isVowel(s.charAt(i))) return true; return false; }
 

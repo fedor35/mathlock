@@ -26,6 +26,8 @@ final class KidUi {
         final boolean night;
         final int bg, card, text, status, accent, listening, chip, chipIcon, nextChip, nextIcon;
         final int syl0, syl1, okBg, wrongBg, curBg, debug, success;
+        /** Подсказка «проверь окончание»: цвет последних букв засчитанного слова. */
+        final int ending;
         /** Соревнования: золото лидера, фон кнопки-кубка, две большие кнопки меню. */
         final int gold, trophyChip, trophyIcon, duelBtn, recordsBtn;
         final int[] confetti;
@@ -39,7 +41,7 @@ final class KidUi {
                 nextChip = Color.rgb(43, 53, 71); nextIcon = Color.rgb(140, 200, 150);
                 syl0 = Color.rgb(143, 180, 255); syl1 = Color.rgb(255, 155, 138);
                 okBg = Color.rgb(36, 74, 42); wrongBg = Color.rgb(90, 42, 42); curBg = Color.rgb(90, 74, 26);
-                debug = Color.rgb(110, 120, 140); success = Color.rgb(60, 170, 100);
+                debug = Color.rgb(110, 120, 140); success = Color.rgb(60, 170, 100); ending = Color.rgb(255, 160, 60);
                 gold = Color.rgb(255, 200, 60); trophyChip = Color.rgb(64, 56, 34); trophyIcon = Color.rgb(255, 200, 60);
                 duelBtn = Color.rgb(240, 99, 74); recordsBtn = Color.rgb(230, 170, 40);
             } else {
@@ -49,7 +51,7 @@ final class KidUi {
                 nextChip = Color.rgb(215, 240, 220); nextIcon = Color.rgb(40, 120, 70);
                 syl0 = Color.rgb(31, 63, 158); syl1 = Color.rgb(184, 48, 31);
                 okBg = Color.rgb(201, 240, 201); wrongBg = Color.rgb(255, 208, 208); curBg = Color.rgb(255, 233, 168);
-                debug = Color.GRAY; success = Color.rgb(46, 160, 90);
+                debug = Color.GRAY; success = Color.rgb(46, 160, 90); ending = Color.rgb(214, 100, 0);
                 gold = Color.rgb(235, 170, 20); trophyChip = Color.rgb(255, 236, 170); trophyIcon = Color.rgb(190, 130, 10);
                 duelBtn = Color.rgb(232, 85, 61); recordsBtn = Color.rgb(240, 170, 30);
             }

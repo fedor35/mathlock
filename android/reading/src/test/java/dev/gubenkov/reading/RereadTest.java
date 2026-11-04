@@ -74,4 +74,29 @@ public class RereadTest {
         ReadingMatcher.Result r = new ReadingMatcher().match(new ReadingText("Ко́т и пёс спя́т в саду́."), "кот и пес спят саду", true);
         assertTrue("«в» без гласной ASR сливает — прощаем", r.complete);
     }
+
+    // --- окончания (мягкая подсказка, 05.11) ---
+    static ReadingMatcher.Result e(String text, String hyp) { return new ReadingMatcher().match(new ReadingText(text), hyp, true); }
+
+    @Test public void wrongEndingIsHintNotError() {
+        ReadingMatcher.Result r = e("В гора́х жил ма́ленький драко́н.", "в горах жили маленькие дракон");
+        assertEquals(OK, r.states[2]); assertTrue(r.endingHint[2]);   // жил → жили
+        assertEquals(OK, r.states[3]); assertTrue(r.endingHint[3]);   // маленький → маленькие
+        assertFalse(r.endingHint[4]);
+    }
+
+    @Test public void falseStartOrFillerIsNotEnding() {
+        ReadingMatcher.Result r = e("Ти́мур пошёл домо́й.", "тимур по пошел домой");
+        assertFalse(r.endingHint[0]);
+        r = e("Ерла́н засмея́лся.", "ерлан а засмеялся");
+        assertFalse(r.endingHint[0]);
+        r = e("Ло́то на столе́.", "лота на столе");   // аканье
+        assertFalse(r.endingHint[0]);
+    }
+
+    @Test public void strictEndingsMakesItWrong() {
+        ReadingMatcher m = new ReadingMatcher(); m.strictEndings = true;
+        ReadingMatcher.Result r = m.match(new ReadingText("В гора́х жил ма́ленький драко́н."), "в горах жили маленькие дракон", true);
+        assertEquals(WRONG, r.states[2]);
+    }
 }
