@@ -59,13 +59,36 @@ public final class AdaptiveLevel {
     public static boolean stressMarks(int level) { return level <= 5; }
     static int clamp(int l) { return Math.max(MIN, Math.min(MAX, l)); }
 
+    public int startLevel() { return startLevel; }
+
     /** Текущий уровень — прогон правил по журналу. */
-    public int level() {
-        int lvl = startLevel; List<Attempt> win = new ArrayList<>(); int lowRun = 0;
-        for (Attempt a : history) {
+    public int level() { return run(history.size(), null); }
+
+    /** Уровень после первых {@code n} попыток журнала. */
+    public int levelAfter(int n) { return run(Math.min(n, history.size()), null); }
+
+    /**
+     * Сколько ещё текстов уровня прочитать «на цель» (точность ≥ 95%, темп ≥ цели), чтобы перейти выше;
+     * 0 — на последнем уровне. Окно — последние подряд удачные попытки уровня.
+     */
+    public int toNextLevel() {
+        List<Attempt> win = new ArrayList<>();
+        int lvl = run(history.size(), win);
+        if (lvl >= MAX) return 0;
+        int ok = 0;
+        for (int i = win.size() - 1; i >= 0 && pass(win.get(i), lvl); i--) ok++;
+        return WINDOW - ok;
+    }
+
+    static boolean pass(Attempt a, int lvl) { return a.accuracy >= ACC_UP && a.wcpm >= target(lvl); }
+
+    private int run(int n, List<Attempt> winOut) {
+        int lvl = startLevel; List<Attempt> win = winOut != null ? winOut : new ArrayList<>(); int lowRun = 0;
+        for (int i = 0; i < n; i++) {
+            Attempt a = history.get(i);
             if (a.challenge) {
                 if (a.level == lvl + 1 && a.accuracy >= ACC_UP && a.wcpm >= target(lvl)) {
-                    win.add(a); if (win.size() > WINDOW) win.remove(0);
+                    addDistinct(win, a);
                     if (win.size() == WINDOW && allPass(win, lvl)) { lvl++; win.clear(); lowRun = 0; }
                 }
                 continue;
@@ -73,11 +96,16 @@ public final class AdaptiveLevel {
             if (a.level != lvl) continue;   // попытка старого уровня (повтор текста) в оценку не идёт
             lowRun = a.accuracy < ACC_DOWN ? lowRun + 1 : 0;
             if (lowRun >= DOWN_RUN && lvl > MIN) { lvl--; win.clear(); lowRun = 0; continue; }
-            win.add(a);
-            if (win.size() > WINDOW) win.remove(0);
+            addDistinct(win, a);
             if (win.size() == WINDOW && lvl < MAX && allPass(win, lvl)) { lvl++; win.clear(); lowRun = 0; }
         }
         return lvl;
+    }
+
+    /** В окне — разные тексты: повтор того же текста (ради рекорда) заменяет прошлую попытку, а не идёт второй. */
+    static void addDistinct(List<Attempt> win, Attempt a) {
+        for (int i = 0; i < win.size(); i++) if (win.get(i).textId.equals(a.textId)) { win.remove(i); break; }
+        win.add(a); if (win.size() > WINDOW) win.remove(0);
     }
 
     static boolean allPass(List<Attempt> w, int lvl) {

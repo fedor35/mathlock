@@ -21,8 +21,11 @@ public final class Leaderboard {
 
     static final long DAY_MS = 86400000L;
 
-    /** Номер календарного дня (от эпохи) в поясе tz. */
-    public static long day(long time, TimeZone tz) { return Math.floorDiv(time + tz.getOffset(time), DAY_MS); }
+    /** «Читательский» день начинается в 4 утра: вечер, перевалив за полночь, остаётся тем же днём (не даёт серию 2 дня). */
+    static final long DAY_START_MS = 4 * 3600000L;
+
+    /** Номер читательского дня (от эпохи) в поясе tz. */
+    public static long day(long time, TimeZone tz) { return Math.floorDiv(time + tz.getOffset(time) - DAY_START_MS, DAY_MS); }
 
     /** Счёт раунда дуэли: темп с поправкой на точность. 60 слов/мин при 90% = 54. */
     public static float score(float wcpm, float accuracy) { return wcpm * accuracy; }
