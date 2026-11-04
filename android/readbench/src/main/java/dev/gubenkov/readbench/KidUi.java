@@ -93,7 +93,7 @@ final class KidUi {
         t.write(pcm, 0, pcm.length); t.play();
     }
 
-    enum Icon { MIC, STOP, SPEAKER, PERSON, COMPARE, NEXT, TROPHY, DUEL }
+    enum Icon { MIC, STOP, PAUSE, SPEAKER, PERSON, COMPARE, NEXT, TROPHY, DUEL }
 
     /** Круглая кнопка: фон + иконка векторами. В режиме pulsing вокруг расходятся кольца («слушаю»). */
     static final class IconButton extends View {
@@ -148,6 +148,11 @@ final class KidUi {
                 case STOP:
                     p.setStyle(Paint.Style.FILL);
                     rect.set(cx - 0.36f * r, cy - 0.36f * r, cx + 0.36f * r, cy + 0.36f * r); cv.drawRoundRect(rect, 0.1f * r, 0.1f * r, p);
+                    break;
+                case PAUSE:   // две вертикальные полосы
+                    p.setStyle(Paint.Style.FILL);
+                    rect.set(cx - 0.36f * r, cy - 0.4f * r, cx - 0.1f * r, cy + 0.4f * r); cv.drawRoundRect(rect, 0.07f * r, 0.07f * r, p);
+                    rect.set(cx + 0.1f * r, cy - 0.4f * r, cx + 0.36f * r, cy + 0.4f * r); cv.drawRoundRect(rect, 0.07f * r, 0.07f * r, p);
                     break;
                 case SPEAKER:
                     p.setStyle(Paint.Style.FILL); path.reset();
