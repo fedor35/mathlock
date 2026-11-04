@@ -1,8 +1,8 @@
 import json, re, sys, collections, unicodedata
 A = '́'; V = set('аеёиоуыэюяАЕЁИОУЫЭЮЯ')
-ALLOWED = re.compile(r'^[а-яёА-ЯЁ́ .,!?—]+$')
+ALLOWED = re.compile(r'^[а-яёА-ЯЁ́ .,!?—:;]+$')
 errs = []; cnt = collections.Counter(); ids = set()
-WR = {3: (5, 8), 4: (15, 30), 5: (35, 60)}
+WR = {3: (5, 8), 4: (15, 30), 5: (35, 60), 6: (50, 70), 7: (80, 110), 8: (120, 160), 9: (170, 230)}
 def words(s): return re.findall(r'[а-яёА-ЯЁ́]+', s)
 def chk(where, s):
     if unicodedata.normalize('NFC', s.replace(A, '')) != s.replace(A, ''): errs.append(f'{where}: not NFC')
@@ -29,10 +29,13 @@ for n, line in enumerate(open(sys.argv[1], encoding='utf-8'), 1):
         ws = words(o['text'])
         if not 3 <= len(ws) <= 4: errs.append(f"{o['id']}: L1 count")
     if lv == 2 and not 2 <= nwc <= 4: errs.append(f"{o['id']}: L2 {nwc} words")
-    if lv >= 2 and not 1 <= len(o['new_words']) <= 2: errs.append(f"{o['id']}: new_words")
+    if lv == 8 and '—' not in o['text']: errs.append(f"{o['id']}: L8 без прямой речи")
+    if lv >= 6 and re.search(r'[:;]\s*[:;]|\s[.,!?:;]', o['text']): errs.append(f"{o['id']}: пробел перед знаком")
+    if 2 <= lv <= 5 and not 1 <= len(o['new_words']) <= 2: errs.append(f"{o['id']}: new_words")
+    if lv >= 6 and not 0 <= len(o['new_words']) <= 3: errs.append(f"{o['id']}: new_words")
     for w in o['new_words']:
         chk(o['id'] + ' nw', w['word']); chk(o['id'] + ' ex', w['explain'])
 print(dict(sorted(cnt.items())))
-want = {1: 35, 2: 35, 3: 30, 4: 30, 5: 20}
+want = {1: 35, 2: 35, 3: 30, 4: 30, 5: 20, 6: 25, 7: 25, 8: 20, 9: 20}
 if dict(cnt) != want: errs.append(f'counts {dict(cnt)}')
 print('\n'.join(errs) or 'OK'); sys.exit(1 if errs else 0)
