@@ -24,8 +24,12 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
     private Prefs prefs;
     private LinearLayout perms;
-    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount;
-    private TextView tvStat;
+    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel;
+    private TextView tvStat, tvReading;
+    private Button btInstallApk, btPrepare;
+    /** Идёт установка пакета или подготовка модели (минуты) — вторую не запускаем. */
+    private static volatile boolean readingBusy;
+    private static final int REQ_MIC = 11, REQ_TREE = 12;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -62,6 +66,7 @@ public class MainActivity extends Activity {
         root.addView(label("Контрольные примеры во время игры"));
         etInterval = field("Каждые N минут работы экрана (0 = выключить)", prefs.checkIntervalMin(), root);
         etCheckCount = field("Примеров в контрольной проверке", prefs.checkCount(), root);
+        buildReadingSection(root);
         root.addView(label("Родительский код (цифры; ввод вместо ответа снимает блокировку)"));
         etCode = new EditText(this);
         etCode.setInputType(InputType.TYPE_CLASS_NUMBER);
@@ -117,6 +122,7 @@ public class MainActivity extends Activity {
             } catch (Exception e) { Toast.makeText(this, "Обои: " + e, Toast.LENGTH_LONG).show(); android.util.Log.w("MathLock", "wallpaper", e); }
         }
         refreshPerms();
+        refreshReading();
         tvStat.setText("\nСтатистика: задано " + prefs.statAsked() + ", ошибок " + prefs.statWrong());
         if (prefs.enabled()) LockService.start(this);
     }
@@ -136,6 +142,9 @@ public class MainActivity extends Activity {
                         .putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, AdminReceiver.cn(this))
                         .putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Чтобы ребёнок не смог удалить приложение. Снять: ввести родительский код, затем здесь же отключить.")));
         permRow("Владелец устройства (через adb, необязательно)", AdminReceiver.isOwner(this), null);
+        if (prefs.taskMode() != TaskPicker.Mode.MATH.ordinal())
+            permRow("Микрофон (чтение вслух; без него — примеры)", micGranted(),
+                    () -> requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, REQ_MIC));
         TextView miui = new TextView(this);
         miui.setText("На MIUI дополнительно: в настройках приложения «Другие разрешения» → «Показывать на экране блокировки» и «Всплывающие окна в фоне», плюс «Автозапуск».");
         perms.addView(miui);
@@ -192,6 +201,9 @@ public class MainActivity extends Activity {
         prefs.setGraceSeconds(Math.max(0, num(etGrace, 20)));
         prefs.setCheckIntervalMin(Math.max(0, num(etInterval, 30)));
         prefs.setCheckCount(Math.max(1, Math.min(20, num(etCheckCount, 1))));
+        prefs.setReadThresholdPct(TaskPicker.clampThreshold(num(etThreshold, 100)));
+        prefs.setReadStartLevel(Math.max(1, Math.min(9, num(etStartLevel, 5))));
+        etThreshold.setText(String.valueOf(prefs.readThresholdPct())); etStartLevel.setText(String.valueOf(prefs.readStartLevel()));
         if (prefs.enabled()) LockService.start(this);
         String code = etCode.getText().toString().trim();
         if (!code.isEmpty() && !TextUtils.isDigitsOnly(code)) { Toast.makeText(this, "Код: только цифры", Toast.LENGTH_SHORT).show(); return; }
@@ -201,4 +213,115 @@ public class MainActivity extends Activity {
     }
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+
+    // ---------------- чтение вслух ----------------
+
+    private boolean micGranted() { return checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED; }
+
+    private void buildReadingSection(LinearLayout root) {
+        root.addView(label("Задание на экране блокировки"));
+        android.widget.RadioGroup rg = new android.widget.RadioGroup(this);
+        String[] names = {"Примеры", "Чтение вслух", "Вперемешку (по очереди)"};
+        for (int i = 0; i < names.length; i++) {
+            android.widget.RadioButton rb = new android.widget.RadioButton(this);
+            rb.setText(names[i]); rb.setId(1000 + i);
+            rg.addView(rb);
+        }
+        rg.check(1000 + TaskPicker.Mode.of(prefs.taskMode()).ordinal());
+        rg.setOnCheckedChangeListener((g, id) -> {
+            prefs.setTaskMode(id - 1000);
+            if (id != 1000 && !micGranted()) requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+            refreshPerms(); refreshReading();
+        });
+        root.addView(rg);
+
+        tvReading = new TextView(this);
+        root.addView(tvReading);
+
+        Button tree = new Button(this);
+        tree.setText("Установить пакет чтения из папки…");
+        tree.setOnClickListener(v -> {
+            if (readingBusy) return;
+            try { startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_TREE); }
+            catch (Exception e) { Toast.makeText(this, "Нет системного выбора папок: " + e, Toast.LENGTH_LONG).show(); }
+        });
+        root.addView(tree);
+        btInstallApk = new Button(this);
+        btInstallApk.setText("Установить пакет чтения из приложения");
+        btInstallApk.setOnClickListener(v -> runReadingJob("Копирую пакет…", () -> PackInstaller.installFromAssets(this, this::readingProgress), true));
+        root.addView(btInstallApk);
+        btPrepare = new Button(this);
+        btPrepare.setText("Подготовить модель для NPU (несколько минут)");
+        btPrepare.setOnClickListener(v -> runReadingJob("Готовлю модель для NPU, не закрывайте экран…", () -> ReadingEngine.prepare(this), false));
+        root.addView(btPrepare);
+
+        etThreshold = field("Точность для разблокировки чтением, % (100 = все слова верно, красные перечитать)", prefs.readThresholdPct(), root);
+        etStartLevel = field("Стартовый уровень текстов для нового чтеца (1–9)", prefs.readStartLevel(), root);
+        Button test = new Button(this);
+        test.setText("Показать экран чтения сейчас");
+        test.setOnClickListener(v -> startActivity(new Intent(this, QuizActivity.class).putExtra(QuizActivity.EXTRA_TASK, "reading")));
+        root.addView(test);
+    }
+
+    private void readingProgress(String s) { runOnUiThread(() -> { if (tvReading != null) tvReading.setText(s); }); }
+
+    /** Долгая работа с пакетом в фоне; по окончании — статус и, после установки, подготовка модели для NPU. */
+    private void runReadingJob(String title, java.util.function.Supplier<String> job, boolean thenPrepare) {
+        if (readingBusy) return;
+        readingBusy = true;
+        tvReading.setText(title);
+        new Thread(() -> {
+            String r;
+            try { r = job.get(); } catch (Throwable e) { r = "Ошибка: " + e; }
+            String res = r;
+            boolean prep = thenPrepare && ReadingEngine.pack(this).needsPrepare(prefs.htpBroken());
+            if (prep) {
+                readingProgress(res + "\nГотовлю модель для NPU, это несколько минут…");
+                try { r = res + "\n" + ReadingEngine.prepare(this); } catch (Throwable e) { r = res + "\nОшибка: " + e; }
+            }
+            readingBusy = false;
+            String fin = r;
+            runOnUiThread(() -> { refreshReading(); Toast.makeText(this, fin, Toast.LENGTH_LONG).show(); tvReading.setText(fin + "\n\n" + tvReading.getText()); });
+        }, "reading-job").start();
+    }
+
+    private void refreshReading() {
+        if (tvReading == null) return;
+        if (readingBusy) return;
+        ReadingPack p = ReadingEngine.pack(this);
+        boolean broken = prefs.htpBroken();
+        StringBuilder sb = new StringBuilder();
+        int texts = p.textCount();
+        sb.append(texts > 0 ? "✅ Тексты: " + texts : "❌ Нет texts.jsonl").append('\n');
+        java.util.List<ReadingPack.Candidate> now = p.plan(broken, false);
+        sb.append(now.isEmpty() ? "❌ Модель: " + (p.plan(broken, true).isEmpty() ? "нет" : "не подготовлена для NPU") : "✅ Модель: " + now.get(0)).append('\n');
+        if (broken) sb.append("⚠ NPU дал сбой — используется CPU. «Подготовить» попробует снова\n");
+        sb.append(p.speaker() ? "✅ Голоса чтецов: есть" : "— Голоса чтецов: нет (один общий журнал)").append('\n');
+        int tts = p.ttsCount();
+        sb.append(tts > 0 ? "✅ Озвучка: " + tts + " текстов" : "— Озвучки нет (кнопка «послушать» скрыта)").append('\n');
+        sb.append(micGranted() ? "✅ Микрофон" : "❌ Микрофон не разрешён").append('\n');
+        boolean ready = micGranted() && p.ready(broken);
+        sb.append(ready ? "Чтение доступно." : "Чтение недоступно — на экране блокировки будут примеры.");
+        if (!ready && prefs.taskMode() == TaskPicker.Mode.MATH.ordinal()) sb.setLength(sb.length() - "Чтение недоступно — на экране блокировки будут примеры.".length());
+        String d = ReadingEngine.describe();
+        if (!d.isEmpty()) sb.append("\nПоследняя загрузка: ").append(d);
+        sb.append("\n\nПакет — папка с texts.jsonl, моделями *.onnx и tts/. Скопируйте её на телефон (по кабелю в «Загрузки» или с флешки) и выберите кнопкой ниже. ")
+          .append("Или adb push в ").append(p.dir == null ? "files/" : p.dir.getPath());
+        tvReading.setText(sb);
+        btInstallApk.setVisibility(PackInstaller.apkHasPack(this) ? View.VISIBLE : View.GONE);
+        btPrepare.setVisibility(p.needsPrepare(false) || broken ? View.VISIBLE : View.GONE);
+    }
+
+    @Override protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == REQ_TREE && res == RESULT_OK && data != null && data.getData() != null) {
+            android.net.Uri tree = data.getData();
+            runReadingJob("Копирую пакет…", () -> PackInstaller.installFromTree(this, tree, this::readingProgress), true);
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int req, String[] p, int[] g) {
+        super.onRequestPermissionsResult(req, p, g);
+        if (req == REQ_MIC) { refreshPerms(); refreshReading(); }
+    }
 }

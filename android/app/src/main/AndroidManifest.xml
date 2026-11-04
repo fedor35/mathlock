@@ -8,12 +8,17 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD"/>
     <uses-permission android:name="android.permission.SET_WALLPAPER"/>
+    <!-- чтение вслух: запрашивается у родителя в настройках; без него — только примеры -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
+        android:extractNativeLibs="true"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <!-- QNN HTP (NPU) грузит libcdsprpc.so из /vendor; на телефонах без Snapdragon её нет — тогда CPU -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
 
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
