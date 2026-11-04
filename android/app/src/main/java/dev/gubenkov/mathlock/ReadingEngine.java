@@ -39,8 +39,15 @@ final class ReadingEngine {
     static File qnnDir(Context c) { File d = new File(c.getFilesDir(), "qnn"); d.mkdirs(); return d; }
     static ReadingPack pack(Context c) { checkCrashMarker(c); return ReadingPack.at(dataDir(c), qnnDir(c)); }
 
-    /** Прошлая загрузка NPU не дошла до конца (процесс умер) — NPU больше не трогаем. */
-    static void checkCrashMarker(Context c) {
+    private static volatile boolean markerChecked;
+
+    /**
+     * Прошлая загрузка NPU не дошла до конца (процесс умер) — NPU больше не трогаем. Проверяется один раз на процесс:
+     * метка живой загрузки (компиляция у родителя идёт минуты) — не след падения.
+     */
+    static synchronized void checkCrashMarker(Context c) {
+        if (markerChecked) return;
+        markerChecked = true;
         File m = new File(qnnDir(c), "loading");
         if (m.exists()) {
             Log.w(TAG, "метка загрузки NPU осталась от упавшего процесса — дальше только CPU");

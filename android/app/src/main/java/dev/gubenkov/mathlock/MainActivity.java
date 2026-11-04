@@ -301,8 +301,8 @@ public class MainActivity extends Activity {
         sb.append(tts > 0 ? "✅ Озвучка: " + tts + " текстов" : "— Озвучки нет (кнопка «послушать» скрыта)").append('\n');
         sb.append(micGranted() ? "✅ Микрофон" : "❌ Микрофон не разрешён").append('\n');
         boolean ready = micGranted() && p.ready(broken);
-        sb.append(ready ? "Чтение доступно." : "Чтение недоступно — на экране блокировки будут примеры.");
-        if (!ready && prefs.taskMode() == TaskPicker.Mode.MATH.ordinal()) sb.setLength(sb.length() - "Чтение недоступно — на экране блокировки будут примеры.".length());
+        if (ready) sb.append("Чтение доступно.");
+        else if (prefs.taskMode() != TaskPicker.Mode.MATH.ordinal()) sb.append("Чтение недоступно — на экране блокировки будут примеры.");
         String d = ReadingEngine.describe();
         if (!d.isEmpty()) sb.append("\nПоследняя загрузка: ").append(d);
         sb.append("\n\nПакет — папка с texts.jsonl, моделями *.onnx и tts/. Скопируйте её на телефон (по кабелю в «Загрузки» или с флешки) и выберите кнопкой ниже. ")

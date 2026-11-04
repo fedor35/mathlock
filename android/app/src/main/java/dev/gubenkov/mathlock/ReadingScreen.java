@@ -117,6 +117,8 @@ final class ReadingScreen {
     volatile boolean recording, repairing, closed, passed;
     /** Экран погас посреди записи: результат не засчитываем (иначе телефон «разблокировался» бы в темноте). */
     volatile boolean aborted;
+    /** В этой записи была подсказка «шумно». */
+    volatile boolean noisy;
     volatile long recStartedAt;
     int fails;
     boolean engineHeld;
@@ -468,6 +470,7 @@ final class ReadingScreen {
         StreamingRecognizer rec = new StreamingRecognizer(model);
         ReadingMatcher matcher = new ReadingMatcher();
         short[] s = new short[chunk]; float[] f = new float[chunk];
+        final Levels levels = new Levels(f); noisy = false; boolean hintShown = false;
         h.post(() -> { status.setText(prev != null ? "Прочитай красные слова" : "Слушаю…"); setListening(true); render(); });
         String hyp = ""; boolean done = false; long lastDecode = 0;
         int lastLen = 0; long lastChange = System.currentTimeMillis();
@@ -477,6 +480,11 @@ final class ReadingScreen {
                 int r = ar.read(s, 0, chunk); if (r <= 0) break;
                 for (int i = 0; i < r; i++) f[i] = s[i] / 32768f;
                 rec.feed(f, r);
+                levels.add(r);
+                if (!hintShown && levels.size() >= 40 && levels.size() % 4 == 0) {
+                    String hint = levels.hint();
+                    if (hint != null) { hintShown = true; noisy = hint.startsWith(Levels.NOISY); Log.i(TAG, "уровни: " + levels + " → " + hint); h.post(() -> status.setText(hint)); }
+                }
                 long now = System.currentTimeMillis();
                 if (now - lastDecode >= 400 && rec.samples() > SR / 2) {
                     lastDecode = now;
@@ -536,7 +544,7 @@ final class ReadingScreen {
         String news = "";
         try {
             SpeakerId.Decision d = identify(rec.audio());
-            String base = save(textId, text, rec, hyp, fin, ok, d);
+            String base = save(textId, text, rec, hyp, fin, ok, d, levels);
             // перечитывание красных — не новая попытка: темп и точность считаются по первому прочтению
             if (prev == null) news = record(textId, level, chall, stats, d, base);
         } catch (Throwable e) { Log.e(TAG, "журнал чтения", e); }
@@ -571,6 +579,8 @@ final class ReadingScreen {
             if (reader != who) { reader = who; adapt = profiles.level(who); }
             profiles.setLast(who.id);
         }
+        // в шуме (была подсказка «шумно») неудачная попытка не роняет уровень: виноват телевизор, а не чтение
+        if (noisy && st.accuracy() < AdaptiveLevel.ACC_DOWN) { Log.i(TAG, "попытка в шуме не засчитана: " + st); return ""; }
         if (!st.counts()) { Log.i(TAG, "попытка не засчитана: " + st); return ""; }
         AdaptiveLevel.Attempt a = new AdaptiveLevel.Attempt(System.currentTimeMillis(), textId, level, st.wcpm(), st.accuracy(), chall, rec);
         String msg = String.format(Locale.ROOT, "%.0f слов в минуту", st.wcpm());
@@ -605,7 +615,7 @@ final class ReadingScreen {
     }
 
     /** Запись для дообучения: recordings/&lt;время&gt;_&lt;id&gt;.wav + .json — формат readbench. */
-    String save(String textId, ReadingText text, StreamingRecognizer rec, String hyp, ReadingMatcher.Result r, boolean ok, SpeakerId.Decision dec) {
+    String save(String textId, ReadingText text, StreamingRecognizer rec, String hyp, ReadingMatcher.Result r, boolean ok, SpeakerId.Decision dec, Levels levels) {
         String base = null;
         try {
             File d = new File(dir(), "recordings"); d.mkdirs();
@@ -620,6 +630,7 @@ final class ReadingScreen {
                     .put("backend", String.valueOf(model.backend)).put("app", "mathlock").put("threshold", prefs.readThresholdPct());
             StringBuilder st = new StringBuilder(); for (ReadingMatcher.State x : r.states) st.append(x.name().charAt(0));
             j.put("states", st.toString());
+            j.put("levels", levels.toString());
             if (dec != null && lastEmb != null) {
                 JSONObject sp = new JSONObject().put("decision", dec.kind.name()).put("speech_s", Math.round(dec.speechS * 100) / 100.0);
                 if (dec.profile != null) sp.put("profile", dec.profile.id);
@@ -633,6 +644,28 @@ final class ReadingScreen {
             try (FileOutputStream o = new FileOutputStream(new File(d, base + ".json"))) { o.write(j.toString(1).getBytes(StandardCharsets.UTF_8)); }
         } catch (Exception e) { Log.e(TAG, "save", e); }
         return base;
+    }
+
+    /**
+     * Громкость по кускам 100 мс (как Levels в readbench): пол шума — 10-й перцентиль, речь — 90-й, по последним 6 с.
+     * Шумовой тест 05.11: телевизор при SNR 10 дБ меняет оценку у 29% слов живого детского чтения; тихий дом — 25–40 дБ.
+     */
+    static final class Levels {
+        static final String NOISY = "Вокруг шумно";
+        final float[] buf; final ArrayList<Float> db = new ArrayList<>();
+        Levels(float[] buf) { this.buf = buf; }
+        void add(int n) { double e = 0; for (int i = 0; i < n; i++) e += buf[i] * buf[i]; db.add((float) (10 * Math.log10(e / Math.max(1, n) + 1e-12))); }
+        int size() { return db.size(); }
+        float pct(int from, float q) { List<Float> v = new ArrayList<>(db.subList(from, db.size())); java.util.Collections.sort(v); return v.get(Math.min(v.size() - 1, (int) (q * v.size()))); }
+        String hint() {
+            int from = Math.max(0, db.size() - 60); float floor = pct(from, 0.1f), speech = pct(from, 0.9f);
+            if (floor > -38f && speech - floor < 15f) return NOISY + " — выключи телевизор или найди тихое место";
+            if (speech < -33f) return "Читай погромче или поднеси телефон ближе";
+            return null;
+        }
+        @Override public String toString() {
+            return db.isEmpty() ? "" : String.format(Locale.ROOT, "пол %.1f дБ, речь %.1f дБ", pct(0, 0.1f), pct(0, 0.9f));
+        }
     }
 
     // ---------------- звук ----------------
