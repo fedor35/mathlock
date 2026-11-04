@@ -25,10 +25,12 @@ final class ReadingEngine {
     private static final long IDLE_CLOSE_MS = 60_000L;
     private static final Handler main = new Handler(Looper.getMainLooper());
 
-    private static CtcModel model;
-    private static SpeakerModel speaker;
-    private static String describe = "";
+    private static volatile CtcModel model;
+    private static volatile SpeakerModel speaker;
+    private static volatile String describe = "";
     private static int users;
+    /** Загрузка (и компиляция под NPU — минуты) идёт под этим замком; главный поток его не ждёт, только tryLock. */
+    private static final java.util.concurrent.locks.ReentrantLock load = new java.util.concurrent.locks.ReentrantLock();
     private static final Runnable closer = ReadingEngine::closeIfIdle;
 
     private ReadingEngine() {}
@@ -54,23 +56,33 @@ final class ReadingEngine {
         if (users == 0) { main.removeCallbacks(closer); main.postDelayed(closer, IDLE_CLOSE_MS); }
     }
 
-    private static synchronized void closeIfIdle() {
-        if (users > 0) return;
+    private static void closeIfIdle() {
+        synchronized (ReadingEngine.class) { if (users > 0) return; }
+        if (!load.tryLock()) { main.postDelayed(closer, IDLE_CLOSE_MS); return; }
+        try { closeNow(); } finally { load.unlock(); }
+    }
+
+    private static void closeNow() {
         try { if (model != null) model.close(); } catch (Exception ignored) { }
         try { if (speaker != null) speaker.close(); } catch (Exception ignored) { }
         if (model != null) Log.i(TAG, "модели выгружены");
         model = null; speaker = null;
     }
 
-    static synchronized String describe() { return describe; }
-    static synchronized SpeakerModel speaker() { return speaker; }
+    static String describe() { return describe; }
+    static SpeakerModel speaker() { return speaker; }
 
     /**
      * Модель по плану ReadingPack: первая, что загрузилась. Медленная и долгая — только из рабочего потока.
      * @param allowCompile компилировать под NPU, если контекста ещё нет (минуты; кнопка «Подготовить» у родителя)
      * @return модель или null — читать нечем (тогда экран блокировки даёт примеры)
      */
-    static synchronized CtcModel model(Context c, boolean allowCompile) {
+    static CtcModel model(Context c, boolean allowCompile) {
+        load.lock();
+        try { return loadLocked(c, allowCompile); } finally { load.unlock(); }
+    }
+
+    private static CtcModel loadLocked(Context c, boolean allowCompile) {
         if (model != null) return model;
         Prefs prefs = new Prefs(c);
         ReadingPack p = pack(c);
@@ -128,9 +140,13 @@ final class ReadingEngine {
     /** Родитель нажал «Подготовить»: снять пометку «NPU сломан», выгрузить и собрать заново с компиляцией. */
     static String prepare(Context c) {
         new Prefs(c).setHtpBroken(false);
-        synchronized (ReadingEngine.class) { if (users == 0) closeIfIdle(); }
         acquire();
         try {
+            load.lock();
+            try {   // загружен CPU-запасной, а NPU ещё не собран — выгрузить, если экран чтения им сейчас не пользуется
+                boolean busy; synchronized (ReadingEngine.class) { busy = users > 1; }
+                if (model != null && model.backend == CtcModel.Backend.CPU && !busy && pack(c).needsPrepare(false)) closeNow();
+            } finally { load.unlock(); }
             CtcModel m = model(c, true);
             return m == null ? "Модель не загрузилась (подробности в logcat, тег " + TAG + ")" : "Готово: " + describe();
         } finally { release(); }
