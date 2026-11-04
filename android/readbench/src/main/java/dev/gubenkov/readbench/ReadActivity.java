@@ -373,40 +373,59 @@ public class ReadActivity extends Activity {
     }
 
     /** Слоги — чередующимся цветом, ударение — акутом из исходного текста; фон — состояние слова. */
+    // Текст собирается один раз на текст (слоги, нажатия, ударения), а при обновлении подсветки меняются только
+    // спаны слов, чьё состояние изменилось. Пересборка всего текста каждые 0,4 с давала моргание: блоки
+    // отрисовки DynamicLayout иногда показывали кадр без фона у целого куска строк.
+    ReadingText shownFor;
+    android.text.Spannable shownText;
+    int[] shownState;
+    Object[][] stateSpans;
+
     void render() {
-        SpannableStringBuilder sb = new SpannableStringBuilder(cur.source);
+        if (shownFor != cur) {
+            SpannableStringBuilder sb = new SpannableStringBuilder(cur.source);
+            for (int w = 0; w < cur.words.size(); w++) {
+                ReadingText.Word wd = cur.words.get(w);
+                int pos = wd.start, s = 0;
+                for (String syl : wd.syllables) {
+                    int st = pos, left = syl.length();
+                    while (pos < wd.end && left > 0) { char c = cur.source.charAt(pos); if (c != ReadingText.ACUTE && c != '-') left--; pos++; }
+                    while (pos < wd.end && (cur.source.charAt(pos) == ReadingText.ACUTE)) pos++;
+                    if (AdaptiveLevel.syllableColors(textLevel)) sb.setSpan(new ForegroundColorSpan(SYL[s++ % 2]), st, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    if (pos < wd.end && cur.source.charAt(pos) == '-') pos++;
+                }
+                {   // слово нажимается всегда: прочитанное — «ты → как надо», ещё не прочитанное — «как надо»
+                    final int ww = w;
+                    sb.setSpan(new ClickableSpan() {
+                        @Override public void onClick(View v) { playWord(ww); }
+                        @Override public void updateDrawState(TextPaint ds) { }
+                    }, wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+            }
+            if (!AdaptiveLevel.stressMarks(textLevel))   // старшие уровни — как в книге, без ударений (акут — нулевой ширины, прячем цветом)
+                for (int i = 0; i < cur.source.length(); i++)
+                    if (cur.source.charAt(i) == ReadingText.ACUTE) sb.setSpan(new ForegroundColorSpan(Color.TRANSPARENT), i, i + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            textView.setText(sb, TextView.BufferType.SPANNABLE);
+            shownText = (android.text.Spannable) textView.getText();
+            shownState = new int[cur.words.size()];
+            stateSpans = new Object[cur.words.size()][];
+            shownFor = cur;
+        }
         for (int w = 0; w < cur.words.size(); w++) {
-            ReadingText.Word wd = cur.words.get(w);
-            int pos = wd.start, s = 0;
-            for (String syl : wd.syllables) {
-                int st = pos, left = syl.length();
-                while (pos < wd.end && left > 0) { char c = cur.source.charAt(pos); if (c != ReadingText.ACUTE && c != '-') left--; pos++; }
-                while (pos < wd.end && (cur.source.charAt(pos) == ReadingText.ACUTE)) pos++;
-                if (AdaptiveLevel.syllableColors(textLevel)) sb.setSpan(new ForegroundColorSpan(SYL[s++ % 2]), st, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                if (pos < wd.end && cur.source.charAt(pos) == '-') pos++;
-            }
-            {   // слово нажимается всегда: прочитанное — «ты → как надо», ещё не прочитанное — «как надо»
-                final int ww = w;
-                sb.setSpan(new ClickableSpan() {
-                    @Override public void onClick(View v) { playWord(ww); }
-                    @Override public void updateDrawState(TextPaint ds) { }
-                }, wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
+            int st = 0;   // 0 — без фона, 1 — верно, 2 — ошибка, 3 — текущее
             if (lastResult != null) {
                 ReadingMatcher.State state = lastResult.states[w];
-                if (state == ReadingMatcher.State.OK)
-                    sb.setSpan(new BackgroundColorSpan(pal.okBg), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                else if (state == ReadingMatcher.State.WRONG) {
-                    sb.setSpan(new BackgroundColorSpan(pal.wrongBg), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    sb.setSpan(new UnderlineSpan(), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                } else if (w == lastResult.progressWords)
-                    sb.setSpan(new BackgroundColorSpan(pal.curBg), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                st = state == ReadingMatcher.State.OK ? 1 : state == ReadingMatcher.State.WRONG ? 2 : w == lastResult.progressWords ? 3 : 0;
             }
+            if (st == shownState[w]) continue;
+            if (stateSpans[w] != null) for (Object o : stateSpans[w]) shownText.removeSpan(o);
+            ReadingText.Word wd = cur.words.get(w);
+            Object[] add = st == 1 ? new Object[]{new BackgroundColorSpan(pal.okBg)}
+                    : st == 2 ? new Object[]{new BackgroundColorSpan(pal.wrongBg), new UnderlineSpan()}
+                    : st == 3 ? new Object[]{new BackgroundColorSpan(pal.curBg)} : null;
+            if (add != null) for (Object o : add) shownText.setSpan(o, wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            stateSpans[w] = add; shownState[w] = st;
         }
-        if (!AdaptiveLevel.stressMarks(textLevel))   // старшие уровни — как в книге, без ударений (акут — нулевой ширины, прячем цветом)
-            for (int i = 0; i < cur.source.length(); i++)
-                if (cur.source.charAt(i) == ReadingText.ACUTE) sb.setSpan(new ForegroundColorSpan(Color.TRANSPARENT), i, i + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        textView.setText(sb);
         // телесуфлёр: текст едет непрерывно со скоростью чтения; цель — текущее слово на трети высоты карточки,
         // со сдвигом внутри строки по доле пройденного (x слова / ширина строки)
         if (lastResult != null && lastResult.progressWords < cur.words.size() && textView.getLayout() != null) {
