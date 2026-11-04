@@ -389,39 +389,64 @@ public class ReadActivity extends Activity {
         if (!AdaptiveLevel.stressMarks(textLevel))   // старшие уровни — как в книге, без ударений (акут — нулевой ширины, прячем цветом)
             for (int i = 0; i < cur.source.length(); i++)
                 if (cur.source.charAt(i) == ReadingText.ACUTE) sb.setSpan(new ForegroundColorSpan(Color.TRANSPARENT), i, i + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        int keepY = textView.getScrollY();
         textView.setText(sb);
-        // длинный текст плавно едет за чтением: цель — текущее слово на второй видимой строке, со сдвигом внутри
-        // строки по доле пройденного (x слова / ширина), поэтому прокрутка непрерывная, а не скачками по строкам
+        // телесуфлёр: текст едет непрерывно со скоростью чтения; цель — текущее слово на трети высоты карточки,
+        // со сдвигом внутри строки по доле пройденного (x слова / ширина строки)
         if (lastResult != null && lastResult.progressWords < cur.words.size() && textView.getLayout() != null) {
-            textView.scrollTo(0, keepY);   // setText не должен дёргать позицию
             android.text.Layout lay = textView.getLayout();
             int off = cur.words.get(lastResult.progressWords).start;
             int line = lay.getLineForOffset(off);
             float w = Math.max(1, lay.getLineRight(line) - lay.getLineLeft(line));
             float frac = Math.max(0, Math.min(1, (lay.getPrimaryHorizontal(off) - lay.getLineLeft(line)) / w));
             int lh = lay.getLineBottom(line) - lay.getLineTop(line);
-            int y = Math.max(0, lay.getLineTop(Math.max(0, line - 1)) + Math.round(frac * lh));
+            float y = lay.getLineTop(line) + frac * lh + textView.getTotalPaddingTop() - textView.getHeight() / 3f;
             int maxY = Math.max(0, lay.getHeight() + textView.getTotalPaddingTop() + textView.getTotalPaddingBottom() - textView.getHeight());
-            smoothScroll(Math.min(y, maxY));
-        } else if (lastResult == null) { if (scrollAnim != null) scrollAnim.cancel(); textView.scrollTo(0, 0); }
+            prompter.target(Math.max(0, Math.min(y, maxY)));
+        } else if (lastResult == null) prompter.reset();
+        else prompter.hold();
     }
 
-    android.animation.ValueAnimator scrollAnim;
-    int scrollTarget = -1;
+    final Prompter prompter = new Prompter();
 
-    /** Плавная прокрутка: длительность ~ интервалу обновления подсветки (0,4 с), чтобы движение было почти непрерывным. */
-    void smoothScroll(int y) {
-        if (y == scrollTarget && scrollAnim != null && scrollAnim.isRunning()) return;
-        if (scrollAnim != null) scrollAnim.cancel();
-        int from = textView.getScrollY();
-        scrollTarget = y;
-        if (Math.abs(y - from) < 2) { textView.scrollTo(0, y); return; }
-        scrollAnim = android.animation.ValueAnimator.ofInt(from, y);
-        scrollAnim.setDuration(Math.min(900, 450 + Math.abs(y - from) / 2));
-        scrollAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(1.2f));
-        scrollAnim.addUpdateListener(a -> textView.scrollTo(0, (int) a.getAnimatedValue()));
-        scrollAnim.start();
+    /**
+     * Телесуфлёр: позиция прокрутки догоняет цель с постоянной скоростью, а не рывками.
+     * Скорость = оценка темпа (скорость роста цели между обновлениями подсветки, сглаженная) + поправка
+     * на отставание. Нет прогресса дольше 1,2 с — темп плавно гаснет и текст замирает у цели.
+     * Назад не едет, кроме случая, когда ушёл вперёд больше чем на строку.
+     */
+    final class Prompter implements android.view.Choreographer.FrameCallback {
+        float y, v, base, goal; long lastGoalNs, lastFrameNs; boolean running;
+
+        void target(float g) {
+            long now = System.nanoTime();
+            if (lastGoalNs != 0 && g > goal) {
+                float dt = (now - lastGoalNs) / 1e9f;
+                if (dt > 0.05f) { float rate = (g - goal) / dt; base = base == 0 ? rate : base * 0.7f + rate * 0.3f; }
+            }
+            if (g != goal || lastGoalNs == 0) { if (g > goal || lastGoalNs == 0) lastGoalNs = now; goal = g; }
+            if (lastGoalNs == 0) lastGoalNs = now;
+            textView.scrollTo(0, Math.round(y));   // setText не должен сбивать позицию
+            start();
+        }
+        void hold() { textView.scrollTo(0, Math.round(y)); }
+        void reset() { running = false; y = v = base = goal = 0; lastGoalNs = 0; textView.scrollTo(0, 0); }
+        void start() { if (!running) { running = true; lastFrameNs = 0; android.view.Choreographer.getInstance().postFrameCallback(this); } }
+
+        @Override public void doFrame(long ns) {
+            if (!running) return;
+            float dt = lastFrameNs == 0 ? 0.016f : Math.min(0.05f, (ns - lastFrameNs) / 1e9f); lastFrameNs = ns;
+            float idle = (System.nanoTime() - lastGoalNs) / 1e9f;
+            if (idle > 1.2f) base *= (float) Math.exp(-dt / 0.6f);           // ребёнок остановился — плавно тормозим
+            float err = goal - y, want;
+            if (err >= 0) want = base + 1.5f * err;                          // догоняем: темп + отставание
+            else want = err < -textView.getLineHeight() ? 2f * err : 0f;     // впереди цели — ждём (назад только при большом уходе)
+            v += (want - v) * Math.min(1f, dt * 3f);                         // инерция: без рывков скорости
+            if (err > 0 && v * dt > err && base < 1f) v = err / dt;          // не перелетать цель на остановке
+            y = Math.max(0, y + v * dt);
+            textView.scrollTo(0, Math.round(y));
+            if (Math.abs(err) < 0.5f && Math.abs(v) < 0.5f && idle > 3f) { running = false; return; }
+            android.view.Choreographer.getInstance().postFrameCallback(this);
+        }
     }
 
     void readLoop() {
