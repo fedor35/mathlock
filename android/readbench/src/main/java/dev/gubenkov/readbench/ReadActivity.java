@@ -111,7 +111,18 @@ public class ReadActivity extends Activity {
         textView.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
         textView.setVerticalScrollBarEnabled(true);
         // палец на тексте — суфлёр уступает (иначе он каждый кадр возвращает позицию и текст «не листается»)
-        textView.setOnTouchListener((v, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN || e.getActionMasked() == android.view.MotionEvent.ACTION_MOVE) prompter.userTouch(); return false; });
+        // долгое нажатие на слово — «ты → как надо» (обычный тап не занят: им листают текст)
+        final android.view.GestureDetector words = new android.view.GestureDetector(this, new android.view.GestureDetector.SimpleOnGestureListener() {
+            @Override public void onLongPress(android.view.MotionEvent e) {
+                int w = wordAt(e.getX(), e.getY());
+                if (w >= 0) { textView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); playWord(w); }
+            }
+        });
+        textView.setOnTouchListener((v, e) -> {
+            if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN || e.getActionMasked() == android.view.MotionEvent.ACTION_MOVE) prompter.userTouch();
+            words.onTouchEvent(e);
+            return false;
+        });
         textView.setHighlightColor(Color.TRANSPARENT);
         textView.setDefaultFocusHighlightEnabled(false);   // иначе фокус красит карточку серым прямоугольником
 
@@ -446,6 +457,14 @@ public class ReadActivity extends Activity {
             prompter.target(Math.max(0, Math.min(y, maxY)));
         } else if (lastResult == null) prompter.reset();
         else prompter.hold();
+    }
+
+    /** Индекс слова под точкой касания (координаты view) или -1. */
+    int wordAt(float x, float y) {
+        if (cur == null || textView.getLayout() == null) return -1;
+        int off = textView.getOffsetForPosition(x, y);
+        for (int w = 0; w < cur.words.size(); w++) { ReadingText.Word wd = cur.words.get(w); if (off >= wd.start && off <= wd.end) return w; }
+        return -1;
     }
 
     final Prompter prompter = new Prompter();
