@@ -55,4 +55,21 @@ public final class Prefs {
     public void bumpStat(boolean wrong) {
         sp.edit().putInt("stat_asked", statAsked() + 1).putInt("stat_wrong", statWrong() + (wrong ? 1 : 0)).apply();
     }
+
+    // ---- чтение вслух (этап 5) ----
+    /** Какое задание на экране блокировки: TaskPicker.Mode (0 — примеры, 1 — чтение, 2 — вперемешку). */
+    public int taskMode() { return sp.getInt("task_mode", 0); }
+    public void setTaskMode(int v) { sp.edit().putInt("task_mode", v).apply(); }
+    /** Точность для разблокировки чтением, %: 100 — все слова верно (красные перечитать), меньше — хватит доли верных слов. */
+    public int readThresholdPct() { return sp.getInt("read_threshold", 100); }
+    public void setReadThresholdPct(int v) { sp.edit().putInt("read_threshold", v).apply(); }
+    /** Стартовый уровень текстов для нового чтеца (без истории). */
+    public int readStartLevel() { return sp.getInt("read_start_level", 5); }
+    public void setReadStartLevel(int v) { sp.edit().putInt("read_start_level", v).apply(); }
+    /** Счётчик сеансов «вперемешку»: чётный — чтение, нечётный — примеры. */
+    public int mixedCounter() { return sp.getInt("mixed_counter", 0); }
+    public void bumpMixedCounter() { sp.edit().putInt("mixed_counter", mixedCounter() + 1).apply(); }
+    /** NPU (QNN HTP) однажды уронил процесс или не загрузился — дальше только CPU, пока родитель не нажмёт «Подготовить». */
+    public boolean htpBroken() { return sp.getBoolean("htp_broken", false); }
+    public void setHtpBroken(boolean v) { sp.edit().putBoolean("htp_broken", v).commit(); }
 }
