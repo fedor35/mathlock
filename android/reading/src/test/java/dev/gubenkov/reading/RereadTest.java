@@ -63,4 +63,15 @@ public class RereadTest {
         assertEquals(OK, again.states[0]);
         assertFalse(again.complete);
     }
+
+    @Test public void skippedAndIsAnError() {
+        ReadingMatcher.Result r = new ReadingMatcher().match(new ReadingText("Ко́т и пёс спя́т в саду́."), "кот пес спят в саду", true);
+        assertEquals("пропущенное «и» — ошибка", WRONG, r.states[1]);
+        assertFalse(r.complete);
+    }
+
+    @Test public void swallowedVIsForgiven() {
+        ReadingMatcher.Result r = new ReadingMatcher().match(new ReadingText("Ко́т и пёс спя́т в саду́."), "кот и пес спят саду", true);
+        assertTrue("«в» без гласной ASR сливает — прощаем", r.complete);
+    }
 }

@@ -9,6 +9,13 @@ public final class ReadingMatcher {
     public static final float INS = 0.35f, DEL = 1f, DEL_END = 1.6f, SUB = 1f, SUB_SIMILAR = 0.4f;
     /** Слово засчитано, если доля ошибок ≤ этого (по длине слова); короткие предлоги прощаем отдельно. */
     public float wordTolerance = 0.25f;
+    /**
+     * Прощать пропуск слов без гласной (в, с, к), если соседние прочитаны: ASR сливает их со следующим словом.
+     * На озвученном корпусе (930 текстов, правильное чтение) GigaAM теряет 2,3% таких слов, а коротких слов
+     * с гласной (и, а, но, на) — 0,3%, поэтому слово с гласной, от которого не услышано ни одной буквы
+     * (пропущенное «и»), — ошибка (Фёдор, 04.11). Частично услышанное («во» → «в» в «вдворе») прощается.
+     */
+    public boolean forgiveShortWords = true;
 
     public enum State { PENDING, OK, WRONG }
 
@@ -93,7 +100,7 @@ public final class ReadingMatcher {
             int len = wd.letters.replace("-", "").length();
             if (w >= progress || (partial && w == progress - 1)) { st[w] = State.PENDING; all = false; continue; }
             float norm = cost[w] / Math.max(1, len);
-            boolean ok = norm <= wordTolerance || (len <= 2 && cost[w] <= DEL_END && w + 1 < progress);
+            boolean ok = norm <= wordTolerance || (forgiveShortWords && len <= 2 && (!hasVowel(L, wd.letters) || hf[w] >= 0) && cost[w] <= DEL_END && w + 1 < progress);
             st[w] = ok ? State.OK : State.WRONG;
             if (!ok) all = false;
         }
@@ -112,6 +119,8 @@ public final class ReadingMatcher {
         }
         return new Result(st, cost, Math.max(progress, prev.progressWords), all, hf, hl);
     }
+
+    static boolean hasVowel(LanguageSpec L, String s) { for (int i = 0; i < s.length(); i++) if (L.isVowel(s.charAt(i))) return true; return false; }
 
     static boolean prevOk(Result prev, int w) { return prev != null && prev.states[w] == State.OK; }
 }
