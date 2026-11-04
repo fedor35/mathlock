@@ -97,5 +97,13 @@ final class LiveTts {
         c.accept(ok ? f : null);
     }
 
+    /** Сразу произнести (пояснение нового слова); ударения корпуса — через «+». */
+    void speak(String text) {
+        if (!ready) { Log.w(TAG, "TTS не готов, не произношу: " + text); return; }
+        tts.speak(plus(text), TextToSpeech.QUEUE_FLUSH, null, "say@" + System.nanoTime());
+    }
+
+    void stop() { if (tts != null) tts.stop(); }
+
     void shutdown() { tts.shutdown(); }
 }

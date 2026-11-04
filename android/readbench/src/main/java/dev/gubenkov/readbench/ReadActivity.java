@@ -181,6 +181,14 @@ public class ReadActivity extends Activity {
         GradientDrawable bd = new GradientDrawable(); bd.setColor(pal.success); bd.setCornerRadius(dp(40)); badge.setBackground(bd);
         badge.setElevation(dp(8)); badge.setVisibility(View.GONE);
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-2, -2); blp.gravity = Gravity.CENTER; root.addView(badge, blp);
+
+        // «Новые слова» — карточка снизу после успешного чтения: слово и пояснение, тап — пояснение вслух (RHVoice)
+        wordsCard = new LinearLayout(this); wordsCard.setOrientation(LinearLayout.VERTICAL);
+        wordsCard.setPadding(dp(22), dp(16), dp(22), dp(18));
+        GradientDrawable wc = new GradientDrawable(); wc.setColor(pal.card); wc.setCornerRadius(dp(28)); wordsCard.setBackground(wc);
+        wordsCard.setElevation(dp(10)); wordsCard.setVisibility(View.GONE);
+        FrameLayout.LayoutParams wlp = new FrameLayout.LayoutParams(-1, -2); wlp.gravity = Gravity.BOTTOM;
+        wlp.setMargins(dp(14), 0, dp(14), dp(18)); root.addView(wordsCard, wlp);
         setContentView(root);
 
         // папки создаёт само приложение: созданные через adb (владелец shell) оно не читает
@@ -372,6 +380,7 @@ public class ReadActivity extends Activity {
     }
 
     void show() {
+        if (wordsCard != null) { wordsCard.setVisibility(View.GONE); if (live != null) live.stop(); }
         cur = new ReadingText(texts.get(idx).optString("text"));
         textLevel = texts.get(idx).optInt("level", 1);
         showLevel();
@@ -465,6 +474,41 @@ public class ReadActivity extends Activity {
         int off = textView.getOffsetForPosition(x, y);
         for (int w = 0; w < cur.words.size(); w++) { ReadingText.Word wd = cur.words.get(w); if (off >= wd.start && off <= wd.end) return w; }
         return -1;
+    }
+
+    LinearLayout wordsCard;
+
+    /** Новые слова текста (new_words из корпуса): показываем после успешного чтения, пояснение озвучивается по тапу. */
+    void showNewWords() {
+        org.json.JSONArray nw = texts.get(idx).optJSONArray("new_words");
+        if (nw == null || nw.length() == 0 || duel) return;
+        boolean marks = AdaptiveLevel.stressMarks(textLevel);
+        wordsCard.removeAllViews();
+        LinearLayout head = new LinearLayout(this); head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(this); title.setText(nw.length() == 1 ? "Новое слово" : "Новые слова");
+        title.setTextSize(20); title.setTypeface(Typeface.create("sans-serif", Typeface.BOLD)); title.setTextColor(pal.text);
+        TextView close = new TextView(this); close.setText("✕"); close.setTextSize(22); close.setTextColor(pal.status);
+        close.setPadding(dp(12), dp(4), dp(4), dp(4));
+        close.setOnClickListener(v -> { live.stop(); wordsCard.setVisibility(View.GONE); });
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1)); head.addView(close);
+        wordsCard.addView(head);
+        for (int i = 0; i < nw.length(); i++) {
+            JSONObject o = nw.optJSONObject(i); if (o == null) continue;
+            final String explain = o.optString("explain");
+            TextView row = new TextView(this);
+            String word = o.optString("word"), ex = explain;
+            if (!marks) { word = LiveTts.plain(word); ex = LiveTts.plain(ex); }
+            SpannableStringBuilder sb = new SpannableStringBuilder("🔊 " + word + "\n" + ex);
+            sb.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), 3, 3 + word.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.setSpan(new ForegroundColorSpan(pal.accent), 3, 3 + word.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            row.setText(sb); row.setTextSize(18); row.setTextColor(pal.text); row.setLineSpacing(0, 1.15f);
+            row.setPadding(0, dp(10), 0, dp(4));
+            row.setOnClickListener(v -> { Log.i(TAG, "пояснение вслух: " + LiveTts.plain(explain)); live.speak(explain); });
+            wordsCard.addView(row);
+        }
+        wordsCard.setVisibility(View.VISIBLE); wordsCard.setAlpha(0f); wordsCard.setTranslationY(dp(60));
+        wordsCard.animate().alpha(1f).translationY(0).setDuration(350).start();
+        Log.i(TAG, "новые слова: " + nw.length());
     }
 
     final Prompter prompter = new Prompter();
@@ -602,7 +646,7 @@ public class ReadActivity extends Activity {
             render();
             status.setText(ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз");
             debug.setText(h);
-            if (ok) celebrate();
+            if (ok) { celebrate(); final int at = idx; textView.postDelayed(() -> { if (idx == at && !recording) showNewWords(); }, 2300); }
         });
         // чей голос — уже после того, как ребёнок увидел результат; запись, журнал и уровень — по опознанному чтецу
         SpeakerId.Decision d = identify(audio, stats);
