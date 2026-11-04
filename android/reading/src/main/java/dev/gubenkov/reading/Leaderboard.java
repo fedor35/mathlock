@@ -19,7 +19,7 @@ import java.util.TimeZone;
 public final class Leaderboard {
     private Leaderboard() {}
 
-    static final long DAY_MS = 86400000L;
+    public static final long DAY_MS = 86400000L;
 
     /** «Читательский» день начинается в 4 утра: вечер, перевалив за полночь, остаётся тем же днём (не даёт серию 2 дня). */
     static final long DAY_START_MS = 4 * 3600000L;

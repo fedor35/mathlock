@@ -96,7 +96,15 @@ public class ParentActivity extends Activity {
                 profiles.setKind(p, SpeakerId.ADULT.equals(p.kind) ? SpeakerId.CHILD : SpeakerId.ADULT); build();
             }));
             if (profiles.list.size() > 1) row.addView(button("Объединить…", v -> mergeDialog(p)));
+            if (a.history.isEmpty()) row.addView(button("Удалить", v -> new AlertDialog.Builder(this)
+                    .setTitle("Удалить «" + p.name + "»?").setMessage("Попыток у чтеца нет: профиль заведён по обрывку записи.")
+                    .setPositiveButton("Удалить", (d, w) -> { profiles.delete(p); build(); }).setNegativeButton("Отмена", null).show()));
             card.addView(row);
+            if (!a.history.isEmpty()) {
+                float target = lvl >= AdaptiveLevel.MAX ? AdaptiveLevel.TOP_TARGET : AdaptiveLevel.target(lvl);
+                card.addView(text(String.format(Locale.ROOT, "Темп по дням (слов/мин), пунктир — цель уровня %d: %.0f", lvl, target), 13, false));
+                card.addView(new TempoChart(this, a.history, target, pal, p.color), new LinearLayout.LayoutParams(-1, dp(170)));
+            }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(12);
             list.addView(card, lp);
         }
