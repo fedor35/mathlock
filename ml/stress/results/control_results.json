@@ -1,0 +1,611 @@
+{
+ "all|gbm:pros": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7418333333333333,
+   "heard_changed": 0.5672386895475819,
+   "dict_changed": 0.3386895475819033,
+   "flag_tpr": 0.6613104524180967,
+   "flag_fpr": 0.25816666666666666
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.741,
+   "heard_changed": 0.5528861154446177,
+   "dict_changed": 0.3541341653666147,
+   "flag_tpr": 0.6458658346333853,
+   "flag_fpr": 0.259
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7426666666666667,
+   "heard_changed": 0.581591263650546,
+   "dict_changed": 0.3232449297971919,
+   "flag_tpr": 0.6767550702028081,
+   "flag_fpr": 0.25733333333333336
+  }
+ },
+ "textcv|gbm:pros": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7113333333333334,
+   "heard_changed": 0.5703588143525741,
+   "dict_changed": 0.328393135725429,
+   "flag_tpr": 0.671606864274571,
+   "flag_fpr": 0.2886666666666667
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.702,
+   "heard_changed": 0.5566302652106084,
+   "dict_changed": 0.3453978159126365,
+   "flag_tpr": 0.6546021840873635,
+   "flag_fpr": 0.298
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7206666666666667,
+   "heard_changed": 0.5840873634945398,
+   "dict_changed": 0.31138845553822153,
+   "flag_tpr": 0.6886115444617785,
+   "flag_fpr": 0.2793333333333333
+  }
+ },
+ "all|gbm:pros+mel": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7645,
+   "heard_changed": 0.5845553822152886,
+   "dict_changed": 0.3185647425897036,
+   "flag_tpr": 0.6814352574102964,
+   "flag_fpr": 0.2355
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7616666666666667,
+   "heard_changed": 0.565990639625585,
+   "dict_changed": 0.33634945397815913,
+   "flag_tpr": 0.6636505460218409,
+   "flag_fpr": 0.23833333333333334
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7673333333333333,
+   "heard_changed": 0.6031201248049922,
+   "dict_changed": 0.3007800312012481,
+   "flag_tpr": 0.6992199687987519,
+   "flag_fpr": 0.23266666666666666
+  }
+ },
+ "textcv|gbm:pros+mel": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7298333333333333,
+   "heard_changed": 0.5939157566302652,
+   "dict_changed": 0.3045241809672387,
+   "flag_tpr": 0.6954758190327613,
+   "flag_fpr": 0.27016666666666667
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.721,
+   "heard_changed": 0.5769110764430577,
+   "dict_changed": 0.319188767550702,
+   "flag_tpr": 0.680811232449298,
+   "flag_fpr": 0.279
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7386666666666667,
+   "heard_changed": 0.6109204368174727,
+   "dict_changed": 0.28985959438377534,
+   "flag_tpr": 0.7101404056162246,
+   "flag_fpr": 0.2613333333333333
+  }
+ },
+ "all|gbm:pros+spec": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.8995,
+   "heard_changed": 0.594383775351014,
+   "dict_changed": 0.328393135725429,
+   "flag_tpr": 0.671606864274571,
+   "flag_fpr": 0.1005
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8973333333333333,
+   "heard_changed": 0.5856474258970359,
+   "dict_changed": 0.3344773790951638,
+   "flag_tpr": 0.6655226209048362,
+   "flag_fpr": 0.10266666666666667
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.9016666666666666,
+   "heard_changed": 0.6031201248049922,
+   "dict_changed": 0.3223088923556942,
+   "flag_tpr": 0.6776911076443057,
+   "flag_fpr": 0.09833333333333333
+  }
+ },
+ "textcv|gbm:pros+spec": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.8161666666666667,
+   "heard_changed": 0.6251170046801872,
+   "dict_changed": 0.2848673946957878,
+   "flag_tpr": 0.7151326053042122,
+   "flag_fpr": 0.18383333333333332
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8046666666666666,
+   "heard_changed": 0.6102964118564742,
+   "dict_changed": 0.29672386895475816,
+   "flag_tpr": 0.7032761310452418,
+   "flag_fpr": 0.19533333333333333
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8276666666666667,
+   "heard_changed": 0.6399375975039001,
+   "dict_changed": 0.27301092043681746,
+   "flag_tpr": 0.7269890795631825,
+   "flag_fpr": 0.17233333333333334
+  }
+ },
+ "all|gbm:pros+spec+pos": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.9301666666666667,
+   "heard_changed": 0.5486739469578783,
+   "dict_changed": 0.3868954758190328,
+   "flag_tpr": 0.6131045241809673,
+   "flag_fpr": 0.06983333333333333
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.9283333333333333,
+   "heard_changed": 0.5341653666146646,
+   "dict_changed": 0.397191887675507,
+   "flag_tpr": 0.6028081123244929,
+   "flag_fpr": 0.07166666666666667
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.932,
+   "heard_changed": 0.5631825273010921,
+   "dict_changed": 0.3765990639625585,
+   "flag_tpr": 0.6234009360374415,
+   "flag_fpr": 0.068
+  }
+ },
+ "textcv|gbm:pros+spec+pos": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.8436666666666667,
+   "heard_changed": 0.593603744149766,
+   "dict_changed": 0.32730109204368174,
+   "flag_tpr": 0.6726989079563183,
+   "flag_fpr": 0.15633333333333332
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.831,
+   "heard_changed": 0.5781591263650546,
+   "dict_changed": 0.33884555382215287,
+   "flag_tpr": 0.6611544461778471,
+   "flag_fpr": 0.169
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8563333333333333,
+   "heard_changed": 0.6090483619344774,
+   "dict_changed": 0.3157566302652106,
+   "flag_tpr": 0.6842433697347894,
+   "flag_fpr": 0.14366666666666666
+  }
+ },
+ "all|gbm:spec": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.8815,
+   "heard_changed": 0.5833073322932917,
+   "dict_changed": 0.340405616224649,
+   "flag_tpr": 0.6595943837753511,
+   "flag_fpr": 0.1185
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8693333333333333,
+   "heard_changed": 0.5722308892355694,
+   "dict_changed": 0.3435257410296412,
+   "flag_tpr": 0.6564742589703588,
+   "flag_fpr": 0.13066666666666665
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8936666666666667,
+   "heard_changed": 0.594383775351014,
+   "dict_changed": 0.3372854914196568,
+   "flag_tpr": 0.6627145085803432,
+   "flag_fpr": 0.10633333333333334
+  }
+ },
+ "textcv|gbm:spec": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7886666666666666,
+   "heard_changed": 0.613572542901716,
+   "dict_changed": 0.2939157566302652,
+   "flag_tpr": 0.7060842433697347,
+   "flag_fpr": 0.21133333333333335
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7656666666666667,
+   "heard_changed": 0.6009360374414977,
+   "dict_changed": 0.29578783151326055,
+   "flag_tpr": 0.7042121684867395,
+   "flag_fpr": 0.23433333333333334
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8116666666666666,
+   "heard_changed": 0.6262090483619345,
+   "dict_changed": 0.2920436817472699,
+   "flag_tpr": 0.7079563182527301,
+   "flag_fpr": 0.18833333333333332
+  }
+ },
+ "all|gbm:ctc": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.872,
+   "heard_changed": 0.4909516380655226,
+   "dict_changed": 0.4265210608424337,
+   "flag_tpr": 0.5734789391575663,
+   "flag_fpr": 0.128
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8656666666666667,
+   "heard_changed": 0.5067082683307332,
+   "dict_changed": 0.4078003120124805,
+   "flag_tpr": 0.5921996879875195,
+   "flag_fpr": 0.13433333333333333
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8783333333333333,
+   "heard_changed": 0.475195007800312,
+   "dict_changed": 0.4452418096723869,
+   "flag_tpr": 0.5547581903276131,
+   "flag_fpr": 0.12166666666666667
+  }
+ },
+ "textcv|gbm:ctc": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7606666666666667,
+   "heard_changed": 0.5249609984399376,
+   "dict_changed": 0.3719188767550702,
+   "flag_tpr": 0.6280811232449298,
+   "flag_fpr": 0.23933333333333334
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7543333333333333,
+   "heard_changed": 0.5285491419656786,
+   "dict_changed": 0.3644305772230889,
+   "flag_tpr": 0.6355694227769111,
+   "flag_fpr": 0.24566666666666667
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.767,
+   "heard_changed": 0.5213728549141966,
+   "dict_changed": 0.3794071762870515,
+   "flag_tpr": 0.6205928237129485,
+   "flag_fpr": 0.233
+  }
+ },
+ "all|mlp:pros+mel": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7521666666666667,
+   "heard_changed": 0.5570982839313573,
+   "dict_changed": 0.34321372854914195,
+   "flag_tpr": 0.656786271450858,
+   "flag_fpr": 0.24783333333333332
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7403333333333333,
+   "heard_changed": 0.5363494539781591,
+   "dict_changed": 0.36505460218408736,
+   "flag_tpr": 0.6349453978159126,
+   "flag_fpr": 0.25966666666666666
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.764,
+   "heard_changed": 0.5778471138845553,
+   "dict_changed": 0.3213728549141966,
+   "flag_tpr": 0.6786271450858035,
+   "flag_fpr": 0.236
+  }
+ },
+ "textcv|mlp:pros+mel": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7173333333333334,
+   "heard_changed": 0.5684867394695787,
+   "dict_changed": 0.33057722308892357,
+   "flag_tpr": 0.6694227769110764,
+   "flag_fpr": 0.2826666666666667
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7006666666666667,
+   "heard_changed": 0.5482059282371294,
+   "dict_changed": 0.35132605304212167,
+   "flag_tpr": 0.6486739469578783,
+   "flag_fpr": 0.29933333333333334
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.734,
+   "heard_changed": 0.5887675507020281,
+   "dict_changed": 0.3098283931357254,
+   "flag_tpr": 0.6901716068642746,
+   "flag_fpr": 0.266
+  }
+ },
+ "all|mlp:pros+spec": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.8666666666666667,
+   "heard_changed": 0.5840873634945398,
+   "dict_changed": 0.34024960998439935,
+   "flag_tpr": 0.6597503900156007,
+   "flag_fpr": 0.13333333333333333
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.856,
+   "heard_changed": 0.5647425897035881,
+   "dict_changed": 0.35039001560062405,
+   "flag_tpr": 0.649609984399376,
+   "flag_fpr": 0.144
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8773333333333333,
+   "heard_changed": 0.6034321372854914,
+   "dict_changed": 0.3301092043681747,
+   "flag_tpr": 0.6698907956318253,
+   "flag_fpr": 0.12266666666666666
+  }
+ },
+ "textcv|mlp:pros+spec": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.7945,
+   "heard_changed": 0.6123244929797191,
+   "dict_changed": 0.3003120124804992,
+   "flag_tpr": 0.6996879875195008,
+   "flag_fpr": 0.2055
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.7806666666666666,
+   "heard_changed": 0.5968798751950078,
+   "dict_changed": 0.3076443057722309,
+   "flag_tpr": 0.6923556942277691,
+   "flag_fpr": 0.21933333333333332
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.8083333333333333,
+   "heard_changed": 0.6277691107644305,
+   "dict_changed": 0.29297971918876753,
+   "flag_tpr": 0.7070202808112325,
+   "flag_fpr": 0.19166666666666668
+  }
+ },
+ "all|logreg:enc": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.9891666666666666,
+   "heard_changed": 0.7112324492979719,
+   "dict_changed": 0.2684867394695788,
+   "flag_tpr": 0.7315132605304212,
+   "flag_fpr": 0.010833333333333334
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.985,
+   "heard_changed": 0.7198127925117005,
+   "dict_changed": 0.2530421216848674,
+   "flag_tpr": 0.7469578783151326,
+   "flag_fpr": 0.015
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.9933333333333333,
+   "heard_changed": 0.7026521060842433,
+   "dict_changed": 0.2839313572542902,
+   "flag_tpr": 0.7160686427457098,
+   "flag_fpr": 0.006666666666666667
+  }
+ },
+ "textcv|logreg:enc": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.9806666666666667,
+   "heard_changed": 0.7243369734789391,
+   "dict_changed": 0.2530421216848674,
+   "flag_tpr": 0.7469578783151326,
+   "flag_fpr": 0.019333333333333334
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.9756666666666667,
+   "heard_changed": 0.7341653666146646,
+   "dict_changed": 0.23650546021840874,
+   "flag_tpr": 0.7634945397815912,
+   "flag_fpr": 0.024333333333333332
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.9856666666666667,
+   "heard_changed": 0.7145085803432137,
+   "dict_changed": 0.26957878315132605,
+   "flag_tpr": 0.7304212168486739,
+   "flag_fpr": 0.014333333333333333
+  }
+ },
+ "случайная": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.42033333333333334,
+   "heard_changed": 0.41450858034321375,
+   "dict_changed": 0.41279251170046805,
+   "flag_tpr": 0.587207488299532,
+   "flag_fpr": 0.5796666666666667
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.422,
+   "heard_changed": 0.4096723868954758,
+   "dict_changed": 0.41279251170046805,
+   "flag_tpr": 0.587207488299532,
+   "flag_fpr": 0.578
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.4186666666666667,
+   "heard_changed": 0.41934477379095164,
+   "dict_changed": 0.41279251170046805,
+   "flag_tpr": 0.587207488299532,
+   "flag_fpr": 0.5813333333333334
+  }
+ },
+ "формула (прототип)": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 0.5738333333333333,
+   "heard_changed": 0.5436817472698908,
+   "dict_changed": 0.3251170046801872,
+   "flag_tpr": 0.6748829953198128,
+   "flag_fpr": 0.4261666666666667
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.5453333333333333,
+   "heard_changed": 0.5382215288611545,
+   "dict_changed": 0.3279251170046802,
+   "flag_tpr": 0.6720748829953198,
+   "flag_fpr": 0.45466666666666666
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 0.6023333333333334,
+   "heard_changed": 0.5491419656786272,
+   "dict_changed": 0.3223088923556942,
+   "flag_tpr": 0.6776911076443057,
+   "flag_fpr": 0.39766666666666667
+  }
+ },
+ "словарь (всегда верное)": {
+  "все": {
+   "n_changed": 6410,
+   "n_same": 6000,
+   "acc_same": 1.0,
+   "heard_changed": 0.0,
+   "dict_changed": 1.0,
+   "flag_tpr": 0.0,
+   "flag_fpr": 0.0
+  },
+  "silero": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 1.0,
+   "heard_changed": 0.0,
+   "dict_changed": 1.0,
+   "flag_tpr": 0.0,
+   "flag_fpr": 0.0
+  },
+  "vosk": {
+   "n_changed": 3205,
+   "n_same": 3000,
+   "acc_same": 1.0,
+   "heard_changed": 0.0,
+   "dict_changed": 1.0,
+   "flag_tpr": 0.0,
+   "flag_fpr": 0.0
+  }
+ }
+}
