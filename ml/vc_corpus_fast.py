@@ -137,7 +137,7 @@ for t in texts:
         else:
             tmp = f"{A.out}/{name}.tmp.wav"; sf.write(tmp, wav, SR)
             subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", tmp, "-af",
-                "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,loudnorm=I=-18",
+                "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,loudnorm=I=-18,adelay=300:all=1,apad=pad_dur=0.3",  # пауза 0,3 с: без неё срезан первый согласный
                 "-c:a", "libopus", "-b:a", "32k", dst], check=True); os.remove(tmp)
         st["ogg"] += time.time() - a
         json.dump(res, open(cerf, "w"), indent=0)

@@ -17,7 +17,7 @@ for f in sorted(glob.glob("vc_ru/*.wav")):
     n = Path(f).stem; tid = n.rsplit(".", 1)[0]
     c = cer(norm(m.transcribe(f)), norm(texts[tid])); res[n] = round(c, 3)
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", f, "-af",
-        "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,loudnorm=I=-18",
+        "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse,loudnorm=I=-18,adelay=300:all=1,apad=pad_dur=0.3",  # пауза 0,3 с: без неё срезан первый согласный
         "-c:a", "libopus", "-b:a", "32k", str(out / f"{n}.ogg")], check=True)
 json.dump(res, open(out / "cer.json", "w"), indent=0)
 bad = {k: v for k, v in res.items() if v > 0.08}
