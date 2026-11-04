@@ -884,6 +884,8 @@ public class ReadActivity extends Activity {
             StringBuilder st = new StringBuilder(); for (ReadingMatcher.State x : r.states) st.append(x.name().charAt(0));
             j.put("states", st.toString());
             if (levels != null) j.put("levels", levels.toString());
+            org.json.JSONArray lfa = new org.json.JSONArray(); for (int x : rec.letterFrames) lfa.put(x);
+            j.put("letter_frames", lfa);   // время букв гипотезы — для разметки родителем и нарезки слов
             StringBuilder eh = new StringBuilder(); for (int q = 0; q < r.endingHint.length; q++) if (r.endingHint[q]) eh.append(eh.length() > 0 ? "," : "").append(q);
             if (eh.length() > 0) j.put("ending_hints", eh.toString());
             if (dec != null) {   // голос: эмбеддинг и косинусы — чтобы потом можно было пересортировать попытки

@@ -160,7 +160,7 @@ public class ParentActivity extends Activity {
 
     /** Попытка: послушать запись или отдать другому чтецу (ручная правка дообучает профиль сильнее, чем авто). */
     void attemptDialog(String fromId, AdaptiveLevel.Attempt a) {
-        List<String> items = new ArrayList<>(); items.add("▶ Послушать");
+        List<String> items = new ArrayList<>(); items.add("▶ Послушать"); items.add("✎ Разметить слова");
         List<SpeakerId.Profile> targets = new ArrayList<>();
         for (SpeakerId.Profile p : profiles.list) if (!p.id.equals(fromId)) { targets.add(p); items.add("→ " + p.avatar + " " + p.name); }
         items.add("→ новый чтец");
@@ -168,6 +168,8 @@ public class ParentActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(a.textId + ": " + nameOf(fromId))
                 .setItems(items.toArray(new String[0]), (d, w) -> {
                     if (w == 0) { play(a.rec); attemptDialog(fromId, a); return; }
+                    if (w == 1) { startActivity(new android.content.Intent(this, LabelActivity.class).putExtra("rec", a.rec)); return; }
+                    w--;
                     float[] e = profiles.embOf(a.rec);
                     String to;
                     if (w <= targets.size()) {
