@@ -33,7 +33,8 @@ public final class SpeakerId {
     /** Вес ручной переразметки в родительском экране. */
     public static final float ALPHA_MANUAL = 0.2f;
     /** Ребёнок/взрослый по голосу: P(ребёнок) выше — ребёнок, ниже ADULT_P — взрослый, между — неизвестно. */
-    public static final float KID_P = 0.75f, ADULT_P = 0.25f;
+    // живые голоса 05.11: ребёнок (Вероника) 0,675 по профилю, взрослые 0,17–0,20 — порог ребёнка 0,75 был выше живого ребёнка
+    public static final float KID_P = 0.60f, ADULT_P = 0.25f;
 
     public enum Kind { MATCH, NEW, UNSURE, SHORT }
 
