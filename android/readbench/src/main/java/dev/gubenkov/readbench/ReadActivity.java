@@ -15,9 +15,7 @@ import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.method.LinkMovementMethod;
 import android.text.style.BackgroundColorSpan;
-import android.text.style.ClickableSpan;
 import android.text.TextPaint;
 import android.view.View;
 import android.text.style.ForegroundColorSpan;
@@ -110,7 +108,7 @@ public class ReadActivity extends Activity {
         textView.setGravity(Gravity.CENTER_VERTICAL | Gravity.START); textView.setPadding(dp(22), dp(22), dp(22), dp(22));
         GradientDrawable card = new GradientDrawable(); card.setColor(pal.card); card.setCornerRadius(dp(28));
         textView.setBackground(card); textView.setElevation(dp(2));
-        textView.setMovementMethod(LinkMovementMethod.getInstance());
+        textView.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
         textView.setVerticalScrollBarEnabled(true);
         // палец на тексте — суфлёр уступает (иначе он каждый кадр возвращает позицию и текст «не листается»)
         textView.setOnTouchListener((v, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN || e.getActionMasked() == android.view.MotionEvent.ACTION_MOVE) prompter.userTouch(); return false; });
@@ -397,13 +395,7 @@ public class ReadActivity extends Activity {
                     if (AdaptiveLevel.syllableColors(textLevel)) sb.setSpan(new ForegroundColorSpan(SYL[s++ % 2]), st, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     if (pos < wd.end && cur.source.charAt(pos) == '-') pos++;
                 }
-                {   // слово нажимается всегда: прочитанное — «ты → как надо», ещё не прочитанное — «как надо»
-                    final int ww = w;
-                    sb.setSpan(new ClickableSpan() {
-                        @Override public void onClick(View v) { playWord(ww); }
-                        @Override public void updateDrawState(TextPaint ds) { }
-                    }, wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
+                // нажатие на слово («ты → как надо», playWord) временно убрано: мешало прокрутке пальцем (Фёдор, 04.11)
             }
             if (!AdaptiveLevel.stressMarks(textLevel))   // старшие уровни — как в книге, без ударений (акут — нулевой ширины, прячем цветом)
                 for (int i = 0; i < cur.source.length(); i++)
@@ -414,11 +406,16 @@ public class ReadActivity extends Activity {
             stateSpans = new Object[cur.words.size()][];
             shownFor = cur;
         }
+        // текущее (жёлтое) слово — первое ещё не засчитанное: слово, на котором оборвался поток, тоже «не засчитано»,
+        // и раньше жёлтым становилось следующее за ним, а само оно оставалось белым («белое — жёлтое — белое»)
+        int cw = -1;
+        if (lastResult != null && recording)
+            for (int w = 0; w < cur.words.size(); w++) if (lastResult.states[w] == ReadingMatcher.State.PENDING) { cw = w; break; }
         for (int w = 0; w < cur.words.size(); w++) {
             int st = 0;   // 0 — без фона, 1 — верно, 2 — ошибка, 3 — текущее
             if (lastResult != null) {
                 ReadingMatcher.State state = lastResult.states[w];
-                st = state == ReadingMatcher.State.OK ? 1 : state == ReadingMatcher.State.WRONG ? 2 : w == lastResult.progressWords ? 3 : 0;
+                st = state == ReadingMatcher.State.OK ? 1 : state == ReadingMatcher.State.WRONG ? 2 : w == cw ? 3 : 0;
             }
             if (st == shownState[w]) continue;
             if (stateSpans[w] != null) for (Object o : stateSpans[w]) shownText.removeSpan(o);
@@ -434,7 +431,7 @@ public class ReadActivity extends Activity {
         // во время чтения — текущее место; после чтения и при перечитывании — первое не засчитанное (красное) слово
         int tw = -1;
         if (lastResult != null) {
-            if (recording && !repairing && lastResult.progressWords < cur.words.size()) tw = lastResult.progressWords;
+            if (recording && !repairing && cw >= 0) tw = cw;
             else for (int w = 0; w < cur.words.size(); w++) if (lastResult.states[w] != ReadingMatcher.State.OK) { tw = w; break; }
         }
         if (tw >= 0 && textView.getLayout() != null) {
