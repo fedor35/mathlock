@@ -24,7 +24,7 @@ public final class AdaptiveLevel {
     static final float[] TARGET = {0, 15, 20, 25, 30, 40, 50, 65, 80, 95};
     /** Цель на последнем уровне растёт до верхней нормы 4 класса. */
     public static final float TOP_TARGET = 120;
-    static final float ACC_UP = 0.95f, ACC_DOWN = 0.85f;
+    public static final float ACC_UP = 0.95f, ACC_DOWN = 0.85f;
     static final int WINDOW = 3, DOWN_RUN = 2, CHALLENGE_EVERY = 5;
 
     public static final class Attempt {

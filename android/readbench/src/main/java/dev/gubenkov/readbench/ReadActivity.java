@@ -359,6 +359,11 @@ public class ReadActivity extends Activity {
             if (reader != who) { reader = who; adapt = profiles.level(who); }
             profiles.setLast(who.id);
         }
+        // в шуме (была подсказка «шумно») неудачная попытка не роняет уровень: виноват телевизор, а не чтение
+        if (levelHintShown && levels != null && levels.hint() != null && levels.hint().startsWith("Вокруг шумно") && st.accuracy() < AdaptiveLevel.ACC_DOWN) {
+            Log.i(TAG, "попытка в шуме не засчитана: " + st + ", " + levels);
+            runOnUiThread(this::showLevel); return who;
+        }
         if (!st.counts()) {
             Log.i(TAG, "попытка не засчитана (дочитано " + st.reached + "/" + st.words + "): " + st);
             runOnUiThread(this::showLevel); return who;
