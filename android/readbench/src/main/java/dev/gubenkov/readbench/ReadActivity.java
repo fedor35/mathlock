@@ -641,7 +641,7 @@ public class ReadActivity extends Activity {
         final String h = hyp;
         int[] lfs = new int[rec.letterFrames.size()];
         for (int i = 0; i < lfs.length; i++) lfs[i] = rec.letterFrames.get(i);
-        final ReadingStats stats = ReadingStats.of(fin, lfs, StreamingRecognizer.FRAME_SEC);
+        final ReadingStats stats = ReadingStats.of(fin, matcher.match(cur, hyp, false, prev), lfs, StreamingRecognizer.FRAME_SEC);
         final float[] audio = rec.audio();
         final int[] lf = new int[rec.letterFrames.size()];
         for (int i = 0; i < lf.length; i++) lf[i] = rec.letterFrames.get(i);
