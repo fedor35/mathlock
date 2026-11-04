@@ -66,6 +66,7 @@ public class ReadActivity extends Activity {
     CtcModel model;
     volatile boolean recording;
     MediaPlayer player;
+    boolean synthPending;
     int voiceIdx = 0;
     // последнее чтение: звук и время каждой буквы гипотезы — для «послушать себя» и нажатия на слово
     float[] lastAudio;
@@ -141,16 +142,18 @@ public class ReadActivity extends Activity {
         for (View v : new View[]{listenBtn, me, compare, nextBtn}) {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(60), dp(60)); lp.setMargins(dp(10), 0, dp(10), 0); row.addView(v, lp);
         }
-        me.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, null));
-        compare.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, this::listen));
-        listenBtn.setOnClickListener(v -> listen());
-        nextBtn.setOnClickListener(v -> { recording = false; if (duel) finish(); else { pickNext(); show(); } });
+        // кнопки звука — переключатели: нажал во время звука — пауза, ещё раз — продолжить; другая кнопка — сначала стоп
+        me.setOnClickListener(v -> toggleAudio(me, KidUi.Icon.PERSON, () -> playMine(0, lastAudio == null ? 0 : lastAudio.length, null)));
+        compare.setOnClickListener(v -> toggleAudio(compare, KidUi.Icon.COMPARE, () -> playMine(0, lastAudio == null ? 0 : lastAudio.length, this::listen)));
+        listenBtn.setOnClickListener(v -> toggleAudio(listenBtn, KidUi.Icon.SPEAKER, this::listen));
+        nextBtn.setOnClickListener(v -> { recording = false; stopAudio(); if (duel) finish(); else { pickNext(); show(); } });
 
         // главная кнопка: микрофон; во время чтения — красная, пульсирует, иконка «стоп»
         mic = new KidUi.IconButton(this, KidUi.Icon.MIC, pal.accent, Color.WHITE);
         LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(dp(150), dp(150)); mlp.gravity = Gravity.CENTER_HORIZONTAL; mlp.topMargin = dp(10);
         mic.setOnClickListener(v -> {
             if (recording) { recording = false; return; }
+            stopAudio();   // не записывать эталон из динамика вместе с ребёнком
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1); return;
             }
@@ -380,7 +383,8 @@ public class ReadActivity extends Activity {
     }
 
     void show() {
-        if (wordsCard != null) { wordsCard.setVisibility(View.GONE); if (live != null) live.stop(); }
+        stopAudio();
+        if (wordsCard != null) wordsCard.setVisibility(View.GONE);
         if (nextBtn != null) nextBtn.setPulsing(false);
         cur = new ReadingText(texts.get(idx).optString("text"));
         textLevel = texts.get(idx).optInt("level", 1);
@@ -682,12 +686,84 @@ public class ReadActivity extends Activity {
                 .withEndAction(() -> badge.animate().alpha(0f).setStartDelay(1600).setDuration(500).withEndAction(() -> badge.setVisibility(View.GONE)));
     }
 
-    void playFile(File f) {
+    /** @return false, если файл не играется. */
+    boolean playFile(File f) {
         Log.i(TAG, "играю " + f.getName());
+        if (player != null) { player.release(); player = null; }
+        final int g = playGen;
+        player = new MediaPlayer();
         try {
-            if (player != null) player.release();
-            player = new MediaPlayer(); player.setDataSource(f.getPath()); player.prepare(); player.start();
-        } catch (Exception e) { Log.w(TAG, "praise " + f + ": " + e); }
+            player.setDataSource(f.getPath()); player.prepare();
+            player.setOnCompletionListener(mp -> audioDone(g));
+            player.start();
+        } catch (Exception e) { Log.w(TAG, "играю " + f + ": " + e); player.release(); player = null; audioDone(g); return false; }
+        return true;
+    }
+
+    // ---- звук: одна дорожка за раз; активная кнопка показывает «пауза» ----
+    KidUi.IconButton activeBtn; KidUi.Icon activeIcon; boolean paused;
+    /** Поколение звука: всё, что запланировано до stopAudio() (продолжение «сравнить», готовая озвучка), молча отменяется. */
+    int playGen;
+    Runnable afterResume;
+
+    void toggleAudio(KidUi.IconButton b, KidUi.Icon icon, Runnable start) {
+        if (activeBtn == b) { if (paused) resumeAudio(); else pauseAudio(); return; }
+        stopAudio();
+        activeBtn = b; activeIcon = icon; paused = false;
+        b.set(KidUi.Icon.PAUSE, b.bg, b.fg); b.setPulsing(true);
+        start.run();
+        if (!audioBusy() && !synthPending) resetActive();   // нечего играть (нет записи/озвучки) — кнопка сразу назад
+    }
+
+    boolean audioBusy() {
+        try { if (player != null && player.isPlaying()) return true; } catch (Exception ignored) {}
+        return track != null && track.getPlayState() == AudioTrack.PLAYSTATE_PLAYING;
+    }
+
+    void pauseAudio() {
+        try { if (player != null && player.isPlaying()) player.pause(); } catch (Exception ignored) {}
+        if (track != null && track.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) track.pause();
+        live.stop();
+        paused = true;
+        if (activeBtn != null) { activeBtn.set(activeIcon, activeBtn.bg, activeBtn.fg); activeBtn.setPulsing(false); }
+        status.setText("Пауза — нажми ещё раз, чтобы продолжить");
+    }
+
+    void resumeAudio() {
+        paused = false;
+        if (activeBtn != null) { activeBtn.set(KidUi.Icon.PAUSE, activeBtn.bg, activeBtn.fg); activeBtn.setPulsing(true); }
+        status.setText("");
+        Runnable r = afterResume; afterResume = null;
+        if (r != null) { r.run(); return; }
+        if (track != null && track.getPlayState() == AudioTrack.PLAYSTATE_PAUSED) { track.play(); return; }
+        try { if (player != null) { player.start(); return; } } catch (Exception ignored) {}
+        resetActive();
+    }
+
+    void stopAudio() {
+        playGen++; synthPending = false; afterResume = null; paused = false;
+        if (player != null) { try { player.stop(); } catch (Exception ignored) {} player.release(); player = null; }
+        if (track != null) { try { track.stop(); } catch (Exception ignored) {} track.release(); track = null; }
+        if (live != null) live.stop();
+        resetActive();
+    }
+
+    void resetActive() {
+        if (activeBtn != null) { activeBtn.set(activeIcon, activeBtn.bg, activeBtn.fg); activeBtn.setPulsing(false); }
+        activeBtn = null; paused = false;
+    }
+
+    /** Дорожка доиграла сама (не после стопа). */
+    void audioDone(int g) { if (g == playGen && !paused) resetActive(); }
+
+    /** Продолжение после дорожки («сравнить»: ты → как надо), если звук за это время не остановили. */
+    Runnable chain(int g, Runnable then) {
+        return () -> {
+            if (g != playGen) return;
+            if (paused) { afterResume = then; return; }
+            then.run();
+            if (!audioBusy() && !synthPending) resetActive();
+        };
     }
 
     String save(Read w, StreamingRecognizer rec, String hyp, ReadingMatcher.Result r, boolean ok, SpeakerId.Decision dec) {
@@ -730,10 +806,15 @@ public class ReadActivity extends Activity {
         if (out.exists() && out.length() > 1000) { playFile(out); status.setText(voiceName(out)); return; }
         status.setText("Готовлю озвучку…");
         final String id = curId(); final ReadingText text = cur; final long t0 = System.nanoTime();
+        synthPending = true; final int g = playGen;
         live.synth(text.source, out, f -> runOnUiThread(() -> {
-            if (f == null) { status.setText("Озвучка на телефоне не получилась"); return; }
+            boolean wanted = g == playGen && synthPending; if (wanted) synthPending = false;
+            if (f == null) { if (wanted) { status.setText("Озвучка на телефоне не получилась"); resetActive(); } return; }
             long ms = (System.nanoTime() - t0) / 1000000;
-            if (id.equals(curId())) { playFile(f); status.setText(voiceName(f)); }
+            if (wanted && id.equals(curId())) {
+                if (paused) afterResume = () -> { playFile(f); status.setText(voiceName(f)); };
+                else { playFile(f); status.setText(voiceName(f)); }
+            }
             new Thread(() -> alignLive(f, text, ms)).start();
         }));
     }
@@ -780,15 +861,12 @@ public class ReadActivity extends Activity {
         File[] fs = refFiles();
         if (fs.length == 0) { status.setText("Озвучки для этого текста пока нет"); return; }
         File f = fs[Math.floorMod(++voiceIdx, fs.length)];
-        try {
-            if (player != null) player.release();
-            player = new MediaPlayer(); player.setDataSource(f.getPath()); player.prepare(); player.start();
-            status.setText(voiceName(f));
-        } catch (Exception e) { status.setText("ошибка воспроизведения: " + e); }
+        status.setText(playFile(f) ? voiceName(f) : "Не получилось включить озвучку");
     }
 
     /** Своё слово: от первой до последней буквы, сопоставленных ему, с запасом 0,15/0,25 с. */
     void playWord(int w) {
+        stopAudio();
         Runnable ref = () -> playRefWord(w);
         if (lastResult == null || lastLetterFrames == null || lastAudio == null) { ref.run(); return; }
         int a = lastResult.hypFirst[w], b = lastResult.hypLast[w];
@@ -811,7 +889,6 @@ public class ReadActivity extends Activity {
             Pcm a = decode(f);
             int from = (int) (t0 * a.sr), to = Math.min(a.data.length, (int) (t1 * a.sr));
             if (to <= from) return;
-            if (player != null && player.isPlaying()) player.pause();
             playPcm(java.util.Arrays.copyOfRange(a.data, from, to), a.sr, null);
             Log.i(TAG, String.format("эталон слова %d «%s» %.2f–%.2f с из %s", w, cur.words.get(w).display, t0, t1, f.getName()));
             status.setText("Как надо: " + cur.words.get(w).display + " (" + voiceName(f) + ")");
@@ -860,19 +937,19 @@ public class ReadActivity extends Activity {
     }
 
     void playPcm(short[] pcm, int sr, Runnable then) {
+        if (player != null && player.isPlaying()) player.pause();
         if (track != null) { try { track.stop(); } catch (Exception ignored) {} track.release(); }
         track = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setAudioFormat(new AudioFormat.Builder().setSampleRate(sr).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                 .setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(Math.max(pcm.length * 2, 4096)).build();
         track.write(pcm, 0, pcm.length);
-        if (then != null) {
-            track.setNotificationMarkerPosition(pcm.length - 1);
-            track.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
-                @Override public void onMarkerReached(AudioTrack t) { textView.postDelayed(then, 400); }
-                @Override public void onPeriodicNotification(AudioTrack t) { }
-            });
-        }
+        final int gen = playGen;
+        track.setNotificationMarkerPosition(pcm.length - 1);
+        track.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
+            @Override public void onMarkerReached(AudioTrack t) { if (then != null) textView.postDelayed(chain(gen, then), 400); else audioDone(gen); }
+            @Override public void onPeriodicNotification(AudioTrack t) { }
+        });
         track.play();
     }
 
@@ -902,22 +979,24 @@ public class ReadActivity extends Activity {
                 .setAudioFormat(new AudioFormat.Builder().setSampleRate(SR).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                 .setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(pcm.length * 2).build();
         track.write(pcm, 0, pcm.length);
-        if (then != null) {
-            track.setNotificationMarkerPosition(pcm.length - 1);
-            track.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
-                @Override public void onMarkerReached(AudioTrack t) { textView.postDelayed(then, 400); }
-                @Override public void onPeriodicNotification(AudioTrack t) { }
-            });
-        }
+        final int gen = playGen;
+        track.setNotificationMarkerPosition(pcm.length - 1);
+        track.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
+            @Override public void onMarkerReached(AudioTrack t) { if (then != null) textView.postDelayed(chain(gen, then), 400); else audioDone(gen); }
+            @Override public void onPeriodicNotification(AudioTrack t) { }
+        });
         track.play();
         status.setText(then != null ? "Ты… потом как надо" : "Твоё чтение");
     }
+
+    /** Ушли с экрана (свернули, заблокировали) — звук не должен играть дальше в фоне. */
+    @Override protected void onStop() { stopAudio(); super.onStop(); }
 
     @Override public void onRequestPermissionsResult(int c, String[] p, int[] g) {
         if (g.length > 0 && g[0] == PackageManager.PERMISSION_GRANTED) new Thread(this::readLoop).start();
     }
 
     @Override protected void onDestroy() {
-        recording = false; if (player != null) player.release(); if (track != null) track.release(); super.onDestroy();
+        recording = false; stopAudio(); super.onDestroy();
     }
 }
