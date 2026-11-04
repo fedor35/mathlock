@@ -24,7 +24,17 @@ public final class ReadingMatcher {
 
     static float sub(LanguageSpec L, char a, char b) { return a == b ? 0 : L.similar(a, b) < 1f ? SUB_SIMILAR : SUB; }
 
-    public Result match(ReadingText text, String hypothesis, boolean finalPass) {
+    public Result match(ReadingText text, String hypothesis, boolean finalPass) { return match(text, hypothesis, finalPass, null); }
+
+    /** Длинная вставка — возврат назад и перечитывание или «э-э-э»: слово перед ней не штрафуется. */
+    static final int MAX_CHARGED_INS = 3;
+
+    /**
+     * @param prev результат прошлой записи этого же текста (перечитываем красные слова или дочитываем хвост) или null.
+     *             Засчитанные тогда слова остаются засчитанными, а их пропуск в новой записи бесплатен:
+     *             можно начать с любого красного слова. Неперечитанные красные остаются красными.
+     */
+    public Result match(ReadingText text, String hypothesis, boolean finalPass, Result prev) {
         LanguageSpec L = text.lang;
         int W = text.words.size();
         StringBuilder tb = new StringBuilder(); int[] wordOf = new int[256]; int n = 0;
@@ -36,7 +46,7 @@ public final class ReadingMatcher {
         String t = tb.toString();
         // пропуск последней буквы слова (окончание: купила→купил, шары→шар) — дороже обычного
         float[] del = new float[n];
-        for (int k = 0; k < n; k++) del[k] = (k + 1 == n || wordOf[k + 1] != wordOf[k]) ? DEL_END : DEL;
+        for (int k = 0; k < n; k++) del[k] = prevOk(prev, wordOf[k]) ? 0f : (k + 1 == n || wordOf[k + 1] != wordOf[k]) ? DEL_END : DEL;
         StringBuilder hb = new StringBuilder();
         for (char c : hypothesis.toCharArray()) { char x = L.normalize(c); if (x != 0) hb.append(x); }
         String h = hb.toString();
@@ -67,9 +77,10 @@ public final class ReadingMatcher {
                 hf[w] = j - 1; if (hl[w] < 0) hl[w] = j - 1; i--; j--;
             }
             else if (i > 0 && (j == 0 || b == 1)) { cost[wordOf[i - 1]] += del[i - 1]; i--; }
-            else { // вставку относим к слову перед ней
-                if (i > 0) { int w = wordOf[i - 1]; cost[w] += INS * 0.5f; hf[w] = j - 1; if (hl[w] < 0) hl[w] = j - 1; }
-                j--;
+            else { // вставку относим к слову перед ней; длинную (перечитывание, «э-э-э») не штрафуем и в слово не включаем
+                int run = 0, j0 = j;
+                while (j > 0 && (i == 0 || B[i][j] == 2)) { j--; run++; }
+                if (i > 0 && run <= MAX_CHARGED_INS) { int w = wordOf[i - 1]; cost[w] += INS * 0.5f * run; hf[w] = j; if (hl[w] < 0) hl[w] = j0 - 1; }
             }
         }
         int progress = bi == 0 ? 0 : wordOf[bi - 1] + 1;
@@ -91,6 +102,16 @@ public final class ReadingMatcher {
             int last = progress - 1;
             if (st[last] == State.WRONG) st[last] = State.PENDING;
         }
-        return new Result(st, cost, progress, all && progress == W, hf, hl);
+        if (prev == null) return new Result(st, cost, progress, all && progress == W, hf, hl);
+        // слияние с прошлой записью: зелёное остаётся зелёным, красное — красным, пока его не перечитали верно
+        all = true;
+        for (int w = 0; w < W; w++) {
+            if (prev.states[w] == State.OK) { st[w] = State.OK; if (hf[w] >= 0 && cost[w] > 0) { hf[w] = hl[w] = -1; } continue; }
+            if (prev.states[w] == State.WRONG && st[w] != State.OK) st[w] = State.WRONG;
+            if (st[w] != State.OK) all = false;
+        }
+        return new Result(st, cost, Math.max(progress, prev.progressWords), all, hf, hl);
     }
+
+    static boolean prevOk(Result prev, int w) { return prev != null && prev.states[w] == State.OK; }
 }

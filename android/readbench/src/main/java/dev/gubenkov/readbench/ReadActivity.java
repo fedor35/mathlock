@@ -111,6 +111,9 @@ public class ReadActivity extends Activity {
         GradientDrawable card = new GradientDrawable(); card.setColor(pal.card); card.setCornerRadius(dp(28));
         textView.setBackground(card); textView.setElevation(dp(2));
         textView.setMovementMethod(LinkMovementMethod.getInstance());
+        textView.setVerticalScrollBarEnabled(true);
+        // палец на тексте — суфлёр уступает (иначе он каждый кадр возвращает позицию и текст «не листается»)
+        textView.setOnTouchListener((v, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN || e.getActionMasked() == android.view.MotionEvent.ACTION_MOVE) prompter.userTouch(); return false; });
         textView.setHighlightColor(Color.TRANSPARENT);
         textView.setDefaultFocusHighlightEnabled(false);   // иначе фокус красит карточку серым прямоугольником
 
@@ -428,9 +431,15 @@ public class ReadActivity extends Activity {
         }
         // телесуфлёр: текст едет непрерывно со скоростью чтения; цель — текущее слово на трети высоты карточки,
         // со сдвигом внутри строки по доле пройденного (x слова / ширина строки)
-        if (lastResult != null && lastResult.progressWords < cur.words.size() && textView.getLayout() != null) {
+        // во время чтения — текущее место; после чтения и при перечитывании — первое не засчитанное (красное) слово
+        int tw = -1;
+        if (lastResult != null) {
+            if (recording && !repairing && lastResult.progressWords < cur.words.size()) tw = lastResult.progressWords;
+            else for (int w = 0; w < cur.words.size(); w++) if (lastResult.states[w] != ReadingMatcher.State.OK) { tw = w; break; }
+        }
+        if (tw >= 0 && textView.getLayout() != null) {
             android.text.Layout lay = textView.getLayout();
-            int off = cur.words.get(lastResult.progressWords).start;
+            int off = cur.words.get(tw).start;
             int line = lay.getLineForOffset(off);
             float w = Math.max(1, lay.getLineRight(line) - lay.getLineLeft(line));
             float frac = Math.max(0, Math.min(1, (lay.getPrimaryHorizontal(off) - lay.getLineLeft(line)) / w));
@@ -452,6 +461,17 @@ public class ReadActivity extends Activity {
      */
     final class Prompter implements android.view.Choreographer.FrameCallback {
         float y, v, base, goal; long lastGoalNs, lastFrameNs; boolean running;
+        /** Палец на тексте: суфлёр уступает ручной прокрутке и возвращается к чтению через USER_PAUSE без касаний. */
+        long userUntil;
+        static final long USER_PAUSE_MS = 4000;
+
+        boolean userHolds() { return android.os.SystemClock.uptimeMillis() < userUntil; }
+        void userTouch() {
+            userUntil = android.os.SystemClock.uptimeMillis() + USER_PAUSE_MS;
+            v = 0;
+            textView.removeCallbacks(resume); textView.postDelayed(resume, USER_PAUSE_MS + 50);
+        }
+        final Runnable resume = () -> { y = textView.getScrollY(); if (goal != y) start(); };
 
         void target(float g) {
             long now = System.nanoTime();
@@ -461,15 +481,17 @@ public class ReadActivity extends Activity {
             }
             if (g != goal || lastGoalNs == 0) { if (g > goal || lastGoalNs == 0) lastGoalNs = now; goal = g; }
             if (lastGoalNs == 0) lastGoalNs = now;
+            if (userHolds()) return;
             textView.scrollTo(0, Math.round(y));   // setText не должен сбивать позицию
             start();
         }
-        void hold() { textView.scrollTo(0, Math.round(y)); }
+        void hold() { if (!userHolds()) textView.scrollTo(0, Math.round(y)); }
         void reset() { running = false; y = v = base = goal = 0; lastGoalNs = 0; textView.scrollTo(0, 0); }
         void start() { if (!running) { running = true; lastFrameNs = 0; android.view.Choreographer.getInstance().postFrameCallback(this); } }
 
         @Override public void doFrame(long ns) {
             if (!running) return;
+            if (userHolds()) { running = false; return; }
             float dt = lastFrameNs == 0 ? 0.016f : Math.min(0.05f, (ns - lastFrameNs) / 1e9f); lastFrameNs = ns;
             float idle = (System.nanoTime() - lastGoalNs) / 1e9f;
             if (idle > 1.2f) base *= (float) Math.exp(-dt / 0.6f);           // ребёнок остановился — плавно тормозим
@@ -485,12 +507,24 @@ public class ReadActivity extends Activity {
         }
     }
 
+    /** Идёт перечитывание красных слов (новая запись дописывает к прошлому результату этого же текста). */
+    volatile boolean repairing;
+    /** Отладка перечитывания: --es wav2 file.wav — после первой записи через 3 с подать вторую (как повторное нажатие микрофона). */
+    String debugWav;
+    boolean wav2Done;
+    /** После конца текста (или в перечитывании) — столько тишины без новых букв, и запись останавливается сама. */
+    static final long AUTO_STOP_MS = 2500;
+
     void readLoop() {
         if (model == null) { runOnUiThread(() -> status.setText("Подожди, готовлюсь…")); return; }
+        // текст уже читали и остались красные или непрочитанные слова — это перечитывание: зелёное остаётся зелёным
+        final ReadingMatcher.Result prev = (!duel && lastResult != null && !lastResult.complete && shownFor == cur) ? lastResult : null;
+        repairing = prev != null;
         recording = true;
         int chunk = SR / 10;
         // отладка: am start … --es wav file.wav — подать файл в темпе реального времени вместо микрофона
-        String wavName = getIntent().getStringExtra("wav");
+        String wavName = debugWav != null ? debugWav : getIntent().getStringExtra("wav");
+        debugWav = null;
         float[] wav = null;
         if (wavName != null) try { wav = BenchActivity.readWav16k(new File(dir(), wavName)); } catch (Exception e) { Log.e(TAG, "wav", e); }
         int wavPos = 0;
@@ -501,9 +535,10 @@ public class ReadActivity extends Activity {
         // что читали — запоминаем: опознание голоса идёт после, а ребёнок к тому времени может нажать «дальше»
         final Read what = new Read(curId(), cur, textLevel, challenge);
         short[] s = new short[chunk]; float[] f = new float[chunk];
-        runOnUiThread(() -> { status.setText("Слушаю…"); setListening(true); });
+        runOnUiThread(() -> { status.setText(prev != null ? "Прочитай красные слова" : "Слушаю…"); setListening(true); render(); });
         if (ar != null) ar.startRecording();
         long lastDecode = 0; String hyp = ""; long decMs = 0; boolean done = false;
+        int lastLen = 0; long lastChange = System.currentTimeMillis();
         long maxSamples = SR * Math.min(600L, Math.max(120L, cur.words.size() * 4L));   // до 15 слов/мин
         try {
             while (recording && rec.samples() < maxSamples) {
@@ -520,18 +555,23 @@ public class ReadActivity extends Activity {
                 if (now - lastDecode >= 400 && rec.samples() > SR / 2) {
                     lastDecode = now;
                     long a = System.nanoTime(); hyp = rec.decode(); decMs = (System.nanoTime() - a) / 1000000;
-                    ReadingMatcher.Result res = matcher.match(cur, hyp, false);
+                    ReadingMatcher.Result res = matcher.match(cur, hyp, false, prev);
+                    int len = hyp.replace(" ", "").length();
+                    if (len != lastLen) { lastLen = len; lastChange = now; }
                     final String h = hyp; final long dm = decMs; final float sec = rec.samples() / (float) SR;
                     Log.i(TAG, String.format("live %.1fs dec %dms progress %d/%d | %s", sec, dm, res.progressWords, cur.words.size(), h));
                     runOnUiThread(() -> { lastResult = res; render(); debug.setText(String.format("%.1f с, %d мс | %s", sec, dm, h)); });
                     if (res.complete) { done = true; break; }
+                    // дочитал до конца (или перечитал, что хотел) и молчит — заканчиваем сами, красные слова покажем
+                    boolean atEnd = prev == null ? res.progressWords >= cur.words.size() : len > 0;
+                    if (atEnd && now - lastChange > AUTO_STOP_MS) { Log.i(TAG, "автостоп: тишина после " + (prev == null ? "конца текста" : "перечитывания")); break; }
                 }
             }
         } catch (Throwable e) { Log.e(TAG, "read", e); }
         if (ar != null) { ar.stop(); ar.release(); }
         recording = false;
         try { hyp = rec.decode(); } catch (Throwable ignored) {}
-        ReadingMatcher.Result fin = matcher.match(cur, hyp, true);
+        ReadingMatcher.Result fin = matcher.match(cur, hyp, true, prev);
         final boolean ok = fin.complete || done;
         final String h = hyp;
         int[] lfs = new int[rec.letterFrames.size()];
@@ -541,7 +581,7 @@ public class ReadActivity extends Activity {
         final int[] lf = new int[rec.letterFrames.size()];
         for (int i = 0; i < lf.length; i++) lf[i] = rec.letterFrames.get(i);
         runOnUiThread(() -> {
-            lastResult = fin; lastAudio = audio; lastLetterFrames = lf;
+            lastResult = fin; lastAudio = audio; lastLetterFrames = lf; repairing = false;
             me.setEnabled(true); compare.setEnabled(true); setListening(false);
             render();
             status.setText(ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз");
@@ -551,7 +591,13 @@ public class ReadActivity extends Activity {
         // чей голос — уже после того, как ребёнок увидел результат; запись, журнал и уровень — по опознанному чтецу
         SpeakerId.Decision d = identify(audio, stats);
         String base = save(what, rec, h, fin, ok, d);
-        SpeakerId.Profile who = record(what, stats, d, base);
+        // перечитывание красных слов — не новая попытка: темп и точность считаются по первому прочтению текста
+        SpeakerId.Profile who = prev == null ? record(what, stats, d, base) : null;
+        if (prev != null) Log.i(TAG, "перечитывание: " + (ok ? "все слова верно" : "остались красные") + ", в журнал не пишется");
+        if (!wav2Done && getIntent().hasExtra("wav2")) {
+            wav2Done = true; debugWav = getIntent().getStringExtra("wav2");
+            textView.postDelayed(() -> new Thread(this::readLoop).start(), 3000);
+        }
         if (duel) {   // раунд дуэли: результат — в DuelActivity, экран закрывается сам (ребёнок успевает увидеть подсветку и конфетти)
             android.content.Intent res = new android.content.Intent().putExtra("wcpm", stats.wcpm()).putExtra("accuracy", stats.accuracy())
                     .putExtra("seconds", stats.seconds).putExtra("counts", stats.counts()).putExtra("rec", base);
