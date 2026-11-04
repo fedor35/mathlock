@@ -452,14 +452,23 @@ public class ReadActivity extends Activity {
         if (lastResult != null && recording)
             for (int w = 0; w < cur.words.size(); w++) if (lastResult.states[w] == ReadingMatcher.State.PENDING) { cw = w; break; }
         for (int w = 0; w < cur.words.size(); w++) {
-            int st = 0;   // 0 — без фона, 1 — верно, 2 — ошибка, 3 — текущее
+            int st = 0;   // 0 — без фона, 1 — верно, 2 — ошибка, 3 — текущее, 4 — верно, но проверь окончание
             if (lastResult != null) {
                 ReadingMatcher.State state = lastResult.states[w];
-                st = state == ReadingMatcher.State.OK ? 1 : state == ReadingMatcher.State.WRONG ? 2 : w == cw ? 3 : 0;
+                st = state == ReadingMatcher.State.OK ? (lastResult.endingHint[w] && !recording ? 4 : 1) : state == ReadingMatcher.State.WRONG ? 2 : w == cw ? 3 : 0;
             }
             if (st == shownState[w]) continue;
             if (stateSpans[w] != null) for (Object o : stateSpans[w]) shownText.removeSpan(o);
             ReadingText.Word wd = cur.words.get(w);
+            if (st == 4) {   // зелёное слово, а окончание (2 последние буквы) — оранжевым жирным
+                int e = wd.end, k = 0, b = e;
+                while (b > wd.start && k < 2) { b--; if (shownText.charAt(b) != '\u0301') k++; }
+                Object[] add = {new BackgroundColorSpan(pal.okBg), new android.text.style.ForegroundColorSpan(pal.ending),
+                        new android.text.style.StyleSpan(Typeface.BOLD), new UnderlineSpan()};
+                shownText.setSpan(add[0], wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                for (int q = 1; q < add.length; q++) shownText.setSpan(add[q], b, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                stateSpans[w] = add; shownState[w] = st; continue;
+            }
             Object[] add = st == 1 ? new Object[]{new BackgroundColorSpan(pal.okBg)}
                     : st == 2 ? new Object[]{new BackgroundColorSpan(pal.wrongBg), new UnderlineSpan()}
                     : st == 3 ? new Object[]{new BackgroundColorSpan(pal.curBg)} : null;
@@ -680,7 +689,9 @@ public class ReadActivity extends Activity {
             lastResult = fin; lastAudio = audio; lastLetterFrames = lf; repairing = false;
             me.setEnabled(true); compare.setEnabled(true); setListening(false);
             render();
-            status.setText(ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз");
+            int hints = 0; for (boolean e : fin.endingHint) if (e) hints++;
+            status.setText((ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз")
+                    + (hints > 0 ? "\nОранжевым — проверь окончания" : ""));
             debug.setText(h);
             if (ok && !duel) nextBtn.setPulsing(true);   // подсказка: можно к следующему тексту
             if (ok) { celebrate(); final int at = idx; textView.postDelayed(() -> { if (idx == at && !recording) showNewWords(); }, 2300); }
@@ -838,6 +849,8 @@ public class ReadActivity extends Activity {
             if (duel) j.put("duel", true);
             StringBuilder st = new StringBuilder(); for (ReadingMatcher.State x : r.states) st.append(x.name().charAt(0));
             j.put("states", st.toString());
+            StringBuilder eh = new StringBuilder(); for (int q = 0; q < r.endingHint.length; q++) if (r.endingHint[q]) eh.append(eh.length() > 0 ? "," : "").append(q);
+            if (eh.length() > 0) j.put("ending_hints", eh.toString());
             if (dec != null) {   // голос: эмбеддинг и косинусы — чтобы потом можно было пересортировать попытки
                 JSONObject sp = new JSONObject().put("decision", dec.kind.name()).put("speech_s", Math.round(dec.speechS * 100) / 100.0);
                 if (dec.profile != null) sp.put("profile", dec.profile.id);
