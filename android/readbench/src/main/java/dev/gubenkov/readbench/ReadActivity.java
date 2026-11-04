@@ -381,6 +381,7 @@ public class ReadActivity extends Activity {
 
     void show() {
         if (wordsCard != null) { wordsCard.setVisibility(View.GONE); if (live != null) live.stop(); }
+        if (nextBtn != null) nextBtn.setPulsing(false);
         cur = new ReadingText(texts.get(idx).optString("text"));
         textLevel = texts.get(idx).optInt("level", 1);
         showLevel();
@@ -646,6 +647,7 @@ public class ReadActivity extends Activity {
             render();
             status.setText(ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз");
             debug.setText(h);
+            if (ok && !duel) nextBtn.setPulsing(true);   // подсказка: можно к следующему тексту
             if (ok) { celebrate(); final int at = idx; textView.postDelayed(() -> { if (idx == at && !recording) showNewWords(); }, 2300); }
         });
         // чей голос — уже после того, как ребёнок увидел результат; запись, журнал и уровень — по опознанному чтецу
