@@ -15,7 +15,9 @@ import java.util.function.Consumer;
 /**
  * Озвучка на самом телефоне через системный TTS-движок (по умолчанию RHVoice из F-Droid:
  * com.github.olga_yakovleva.rhvoice.android, русский голос скачивается в его приложении).
- * Акуты убираются: RHVoice ставит ударения сам, а разметка «+» его ломает (проверено на r99950x).
+ * Ударения корпуса передаются знаком «+» перед ударной гласной. Это работает, только если в RHVoice
+ * импортирован конфиг со строкой {@code stress_marker=+} (Настройки RHVoice → импорт файла конфигурации);
+ * без него «+» ломает чтение. Голос Aleksandr-hq маркер игнорирует, Tatiana слушается (Фёдор на слух, 04.11).
  */
 final class LiveTts {
     static final String TAG = "ReadBench";
@@ -40,8 +42,8 @@ final class LiveTts {
             Log.i(TAG, "TTS голоса ru: " + all);
             try {
                 File pref = new File(ctx.getExternalFilesDir(null), "tts_voice.txt");
-                if (pref.exists()) {
-                    String want = new String(java.nio.file.Files.readAllBytes(pref.toPath())).trim();
+                {
+                    String want = pref.exists() ? new String(java.nio.file.Files.readAllBytes(pref.toPath())).trim() : DEFAULT_VOICE;
                     for (android.speech.tts.Voice v : tts.getVoices()) if (v.getName().equalsIgnoreCase(want)) { tts.setVoice(v); break; }
                 }
             } catch (Exception e) { Log.w(TAG, "tts_voice.txt: " + e); }
@@ -61,12 +63,28 @@ final class LiveTts {
 
     static String plain(String text) { return text.replace(String.valueOf('́'), ""); }
 
+    /** «Ма́ма» → «М+ама»: акут после гласной становится «+» перед ней. */
+    static String plus(String text) {
+        final char acute = 0x0301;
+        StringBuilder b = new StringBuilder(text.length() + 16);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == acute) continue;
+            if (i + 1 < text.length() && text.charAt(i + 1) == acute) b.append('+');
+            b.append(c);
+        }
+        return b.toString();
+    }
+
+    /** Голос по умолчанию: слушается маркера ударения. */
+    static final String DEFAULT_VOICE = "Tatiana";
+
     /** Синтез в wav; {@code done} получает файл или null (вызывается в потоке TTS). */
     void synth(String text, File out, Consumer<File> done) {
         if (!ready) { done.accept(null); return; }
         String id = out.getName() + "@" + System.nanoTime();
         synchronized (this) { pending.put(id, done); started.put(id, System.nanoTime()); files.put(id, out); }
-        int r = tts.synthesizeToFile(plain(text), new Bundle(), out, id);
+        int r = tts.synthesizeToFile(plus(text), new Bundle(), out, id);
         if (r != TextToSpeech.SUCCESS) finish(id, false);
     }
 
