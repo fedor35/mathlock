@@ -29,16 +29,23 @@ public final class AdaptiveLevel {
 
     public static final class Attempt {
         public final long time; public final String textId; public final int level; public final float wcpm, accuracy; public final boolean challenge;
+        /** Имя записи в recordings/ (без расширения) — по ней попытку можно переложить другому чтецу; может быть null. */
+        public final String rec;
         public Attempt(long time, String textId, int level, float wcpm, float accuracy, boolean challenge) {
+            this(time, textId, level, wcpm, accuracy, challenge, null);
+        }
+        public Attempt(long time, String textId, int level, float wcpm, float accuracy, boolean challenge, String rec) {
             this.time = time; this.textId = textId; this.level = level; this.wcpm = wcpm; this.accuracy = accuracy; this.challenge = challenge;
+            this.rec = rec;
         }
         public String toTsv() {
-            return String.format(Locale.ROOT, "%d\t%s\t%d\t%.1f\t%.3f\t%d", time, textId, level, wcpm, accuracy, challenge ? 1 : 0);
+            return String.format(Locale.ROOT, "%d\t%s\t%d\t%.1f\t%.3f\t%d", time, textId, level, wcpm, accuracy, challenge ? 1 : 0)
+                    + (rec != null ? "\t" + rec : "");
         }
         public static Attempt parse(String line) {
             String[] p = line.split("\t");
             return new Attempt(Long.parseLong(p[0]), p[1], Integer.parseInt(p[2]), Float.parseFloat(p[3]), Float.parseFloat(p[4]),
-                    p.length > 5 && p[5].equals("1"));
+                    p.length > 5 && p[5].equals("1"), p.length > 6 && !p[6].isEmpty() ? p[6] : null);
         }
     }
 

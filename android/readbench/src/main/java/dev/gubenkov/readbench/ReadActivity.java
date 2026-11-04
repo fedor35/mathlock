@@ -46,6 +46,8 @@ import dev.gubenkov.reading.CtcModel;
 import dev.gubenkov.reading.ReadingStats;
 import dev.gubenkov.reading.ReadingMatcher;
 import dev.gubenkov.reading.ReadingText;
+import dev.gubenkov.reading.SpeakerId;
+import dev.gubenkov.reading.SpeakerModel;
 import dev.gubenkov.reading.StreamingRecognizer;
 
 /**
@@ -75,8 +77,12 @@ public class ReadActivity extends Activity {
     KidUi.IconButton mic, me, compare, listenBtn, nextBtn;
     KidUi.ConfettiView confetti;
     TextView levelView;
-    // адаптивная сложность: журнал попыток files/progress.tsv, уровень выводится из него (AdaptiveLevel)
+    // адаптивная сложность: журнал попыток чтеца files/progress-<id>.tsv, уровень выводится из него (AdaptiveLevel)
     AdaptiveLevel adapt;
+    // чтецы: тихое опознание по голосу после каждого чтения (Profiles, SpeakerId); без модели — общий progress.tsv
+    Profiles profiles;
+    SpeakerModel spk;
+    SpeakerId.Profile reader;   // последний опознанный — по нему уровень и следующий текст
     boolean challenge;
     int textLevel = 1;
     LiveTts live;   // озвучка на телефоне (RHVoice), файлы tts/<id>.rhvoice.wav + .json
@@ -140,6 +146,8 @@ public class ReadActivity extends Activity {
 
         levelView = new TextView(this); levelView.setTextSize(15); levelView.setTextColor(pal.status); levelView.setGravity(Gravity.CENTER);
         levelView.setPadding(0, 0, 0, dp(10));
+        // скрытый вход для родителей: долгое нажатие на строку уровня
+        levelView.setOnLongClickListener(v -> { startActivity(new android.content.Intent(this, ParentActivity.class)); return true; });
         l.addView(levelView); l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row); l.addView(mic, mlp); l.addView(debug);
         root.addView(l, new FrameLayout.LayoutParams(-1, -1));
         confetti = new KidUi.ConfettiView(this); root.addView(confetti, new FrameLayout.LayoutParams(-1, -1));
@@ -155,6 +163,7 @@ public class ReadActivity extends Activity {
         // папки создаёт само приложение: созданные через adb (владелец shell) оно не читает
         new File(dir(), "tts/cheer").mkdirs(); new File(dir(), "recordings").mkdirs();
         loadTexts();
+        profiles = new Profiles(dir());
         loadProgress();
         live = new LiveTts(this, LiveTts.RHVOICE);
         if (getIntent().hasExtra("idx")) idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
@@ -162,6 +171,8 @@ public class ReadActivity extends Activity {
         show();
         new Thread(() -> {
             loadModel();
+            // отладка: am start … --es spk_wav file.wav — эмбеддинг файла в logcat (сверка с Python)
+            if (getIntent().hasExtra("spk_wav")) spkTest(getIntent().getStringExtra("spk_wav"));
             if (getIntent().hasExtra("wav")) readLoop();
             // отладка: am start … --ez tts_test true — озвучить текущий текст на телефоне, замерить и разметить слова
             if (getIntent().getBooleanExtra("tts_test", false)) {
@@ -203,19 +214,44 @@ public class ReadActivity extends Activity {
             try { model = new CtcModel(new File(d, "gigaam_ctc_int8.onnx").getPath(), CtcModel.Backend.CPU, 0, null); }
             catch (Throwable e2) { runOnUiThread(() -> debug.setText("нет модели: " + e2)); }
         }
+        File sf = new File(d, SpeakerModel.FILE);
+        if (sf.exists()) try {
+            long t = System.nanoTime(); spk = new SpeakerModel(sf.getPath());
+            Log.i(TAG, "голосовая модель за " + (System.nanoTime() - t) / 1000000 + " мс, профилей " + profiles.list.size());
+        } catch (Throwable e) { Log.e(TAG, "голосовая модель", e); }
+        else Log.i(TAG, "нет " + SpeakerModel.FILE + " — без опознания чтецов, журнал progress.tsv");
+    }
+
+    void spkTest(String name) {
+        try {
+            float[] x = BenchActivity.readWav16k(new File(dir(), name));
+            SpeakerModel.Result r = null;
+            for (int i = 0; i < 4; i++) r = spk.embed(x, x.length);   // первый прогон — прогрев
+            StringBuilder sb = new StringBuilder();
+            for (float v : r.emb) sb.append(String.format(java.util.Locale.ROOT, "%.6f,", v));
+            Log.i(TAG, String.format(java.util.Locale.ROOT, "spk_test %s: звук %.1f с, речь %.1f с, кадров %d, признаки %d мс, модель %d мс | %s",
+                    name, x.length / (float) SR, r.speechS, r.frames, r.featMs, r.modelMs, sb));
+        } catch (Throwable e) { Log.e(TAG, "spk_test", e); }
     }
 
     String curId() { return texts.get(idx).optString("id"); }
 
+    /** Общий журнал — только без голосовой модели (как было до профилей). */
     File progressFile() { return new File(dir(), "progress.tsv"); }
 
+    /** Уровень текущего чтеца: последний опознанный; профилей ещё нет — стартовый уровень с пустой историей. */
     void loadProgress() {
-        List<String> lines = new ArrayList<>();
-        try (BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(progressFile()), StandardCharsets.UTF_8))) {
-            String line; while ((line = r.readLine()) != null) lines.add(line);
-        } catch (Exception ignored) {}
-        adapt = AdaptiveLevel.parse(START_LEVEL, lines);
-        Log.i(TAG, "прогресс: " + adapt.history.size() + " попыток, уровень " + adapt.level());
+        reader = profiles.last();
+        if (!new File(dir(), SpeakerModel.FILE).exists()) adapt = AdaptiveLevel.parse(START_LEVEL, Profiles.lines(progressFile()));
+        else if (reader != null) adapt = profiles.level(reader);
+        else adapt = new AdaptiveLevel(START_LEVEL);
+        Log.i(TAG, "чтец " + (reader == null ? "—" : reader.id + " «" + reader.name + "»") + ": " + adapt.history.size()
+                + " попыток, уровень " + adapt.level() + ", профилей " + profiles.list.size());
+    }
+
+    @Override protected void onRestart() {   // вернулись из родительского экрана: имена, объединения, переразметка
+        super.onRestart();
+        profiles.load(); loadProgress(); showLevel();
     }
 
     /** Следующий текст по адаптивному уровню; каждый 5-й — «вызов» на уровень выше. */
@@ -238,22 +274,72 @@ public class ReadActivity extends Activity {
         levelView.setText(s);
     }
 
-    void record(ReadingStats st) {
-        if (!st.counts()) { Log.i(TAG, "попытка не засчитана (дочитано " + st.reached + "/" + st.words + "): " + st); return; }
-        int before = adapt.level(); float best = adapt.best(textLevel);
-        AdaptiveLevel.Attempt a = new AdaptiveLevel.Attempt(System.currentTimeMillis(), curId(), textLevel, st.wcpm(), st.accuracy(), challenge);
-        adapt.history.add(a);
-        try (java.io.FileOutputStream o = new java.io.FileOutputStream(progressFile(), true)) {
-            o.write((a.toTsv() + "\n").getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) { Log.w(TAG, "progress.tsv: " + e); }
-        int after = adapt.level();
-        Log.i(TAG, "попытка: " + st + (challenge ? " (вызов)" : "") + ", уровень " + before + " → " + after);
+    /**
+     * Чей голос: эмбеддинг записи → косинусы ко всем профилям → MATCH (его журнал, профиль дообучается),
+     * NEW (новый «Чтец N», только по засчитанной попытке), иначе «не определён». Ребёнку ничего не показывается.
+     */
+    SpeakerId.Decision identify(float[] audio, ReadingStats st) {
+        if (spk == null || audio == null) return null;
+        try {
+            SpeakerModel.Result r = spk.embed(audio, audio.length);
+            if (r == null) { Log.i(TAG, "голос: речи нет"); return null; }
+            SpeakerId.Decision d = SpeakerId.decide(r.emb, r.speechS, profiles.list);
+            Log.i(TAG, String.format(java.util.Locale.ROOT, "голос: признаки %d мс, модель %d мс (%d кадров); ", r.featMs, r.modelMs, r.frames)
+                    + d.describe(profiles.list) + String.format(java.util.Locale.ROOT, ", P(ребёнок)=%.2f", SpeakerId.kidProbability(r.emb)));
+            lastEmb = r.emb;
+            return d;
+        } catch (Throwable e) { Log.e(TAG, "опознание", e); return null; }
+    }
+    float[] lastEmb;
+
+    /** Что читали: текст, его уровень и «вызов» — на момент начала чтения. */
+    static final class Read {
+        final String id; final ReadingText text; final int level; final boolean challenge;
+        Read(String id, ReadingText text, int level, boolean challenge) { this.id = id; this.text = text; this.level = level; this.challenge = challenge; }
+    }
+
+    void record(Read w, ReadingStats st, SpeakerId.Decision d, String rec) {
+        SpeakerId.Profile who = null;
+        if (d != null && d.kind == SpeakerId.Kind.MATCH) who = d.profile;
+        else if (d != null && d.kind == SpeakerId.Kind.NEW && st.counts()) who = profiles.create(lastEmb);
+        if (who != null) {
+            if (d.kind == SpeakerId.Kind.MATCH) { SpeakerId.learn(who, lastEmb, false); profiles.save(who); }
+            if (reader != who) { reader = who; adapt = profiles.level(who); }
+            profiles.setLast(who.id);
+        }
+        if (!st.counts()) {
+            Log.i(TAG, "попытка не засчитана (дочитано " + st.reached + "/" + st.words + "): " + st);
+            runOnUiThread(this::showLevel); return;
+        }
+        AdaptiveLevel.Attempt a = new AdaptiveLevel.Attempt(System.currentTimeMillis(), w.id, w.level, st.wcpm(), st.accuracy(), w.challenge, rec);
         String msg = String.format(java.util.Locale.ROOT, "%.0f слов в минуту", st.wcpm());
+        if (spk == null) {   // без голосовой модели — один общий журнал, как раньше
+            int before = adapt.level(); float best = adapt.best(w.level);
+            adapt.history.add(a);
+            try (java.io.FileOutputStream o = new java.io.FileOutputStream(progressFile(), true)) {
+                o.write((a.toTsv() + "\n").getBytes(StandardCharsets.UTF_8));
+            } catch (Exception e) { Log.w(TAG, "progress.tsv: " + e); }
+            msg += levelNews(st, before, best);
+        } else if (who == null) {   // не определён: отдельный журнал, уровень не меняется
+            profiles.append(null, a);
+            Log.i(TAG, "попытка: " + st + " → чтец не определён (progress-unknown.tsv)");
+        } else {
+            int before = adapt.level(); float best = adapt.best(w.level);
+            adapt.history.add(a); profiles.append(who.id, a);
+            msg += levelNews(st, before, best);
+            Log.i(TAG, "попытка: " + st + (w.challenge ? " (вызов)" : "") + " → " + who.id + ", уровень " + before + " → " + adapt.level());
+            if (d.kind == SpeakerId.Kind.NEW) { int n = profiles.resortUnknown(); if (n > 0) adapt = profiles.level(who); }
+        }
+        final String m = msg;
+        runOnUiThread(() -> { status.setText(status.getText() + "\n" + m); showLevel(); });
+    }
+
+    String levelNews(ReadingStats st, int before, float best) {
+        int after = adapt.level(); String msg = "";
         if (st.accuracy() >= 0.95f && st.wcpm() > best && best > 0) msg += " — новый рекорд!";
         if (after > before) msg += "\nНовый уровень " + after + "!";
         else if (after < before) msg += "\nПотренируемся на уровне " + after;
-        final String m = msg;
-        runOnUiThread(() -> { status.setText(status.getText() + "\n" + m); showLevel(); });
+        return msg;
     }
 
     void show() {
@@ -327,6 +413,8 @@ public class ReadActivity extends Activity {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, SR * 2);
         StreamingRecognizer rec = new StreamingRecognizer(model);
         ReadingMatcher matcher = new ReadingMatcher();
+        // что читали — запоминаем: опознание голоса идёт после, а ребёнок к тому времени может нажать «дальше»
+        final Read what = new Read(curId(), cur, textLevel, challenge);
         short[] s = new short[chunk]; float[] f = new float[chunk];
         runOnUiThread(() -> { status.setText("Слушаю…"); setListening(true); });
         if (ar != null) ar.startRecording();
@@ -361,7 +449,6 @@ public class ReadActivity extends Activity {
         ReadingMatcher.Result fin = matcher.match(cur, hyp, true);
         final boolean ok = fin.complete || done;
         final String h = hyp;
-        save(rec, h, fin, ok);
         int[] lfs = new int[rec.letterFrames.size()];
         for (int i = 0; i < lfs.length; i++) lfs[i] = rec.letterFrames.get(i);
         final ReadingStats stats = ReadingStats.of(fin, lfs, StreamingRecognizer.FRAME_SEC);
@@ -375,8 +462,11 @@ public class ReadActivity extends Activity {
             status.setText(ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз");
             debug.setText(h);
             if (ok) celebrate();
-            record(stats);
         });
+        // чей голос — уже после того, как ребёнок увидел результат; запись, журнал и уровень — по опознанному чтецу
+        SpeakerId.Decision d = identify(audio, stats);
+        String base = save(what, rec, h, fin, ok, d);
+        record(what, stats, d, base);
     }
 
     final java.util.Random rnd = new java.util.Random();
@@ -403,23 +493,35 @@ public class ReadActivity extends Activity {
         } catch (Exception e) { Log.w(TAG, "praise " + f + ": " + e); }
     }
 
-    void save(StreamingRecognizer rec, String hyp, ReadingMatcher.Result r, boolean ok) {
+    String save(Read w, StreamingRecognizer rec, String hyp, ReadingMatcher.Result r, boolean ok, SpeakerId.Decision dec) {
+        String base = null;
         try {
             File d = new File(dir(), "recordings"); d.mkdirs();
-            String base = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.ROOT).format(new java.util.Date()) + "_" + curId();
+            base = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.ROOT).format(new java.util.Date()) + "_" + w.id;
             float[] a = rec.audio();
             ByteBuffer bb = ByteBuffer.allocate(44 + a.length * 2).order(ByteOrder.LITTLE_ENDIAN);
             bb.put("RIFF".getBytes()).putInt(36 + a.length * 2).put("WAVEfmt ".getBytes()).putInt(16).putShort((short) 1).putShort((short) 1)
               .putInt(SR).putInt(SR * 2).putShort((short) 2).putShort((short) 16).put("data".getBytes()).putInt(a.length * 2);
             for (float x : a) bb.putShort((short) Math.max(-32768, Math.min(32767, Math.round(x * 32767))));
             try (FileOutputStream o = new FileOutputStream(new File(d, base + ".wav"))) { o.write(bb.array()); }
-            JSONObject j = new JSONObject().put("id", curId()).put("text", cur.source).put("hyp", hyp).put("auto_ok", ok)
+            JSONObject j = new JSONObject().put("id", w.id).put("text", w.text.source).put("hyp", hyp).put("auto_ok", ok)
                     .put("backend", String.valueOf(model.backend));
             StringBuilder st = new StringBuilder(); for (ReadingMatcher.State x : r.states) st.append(x.name().charAt(0));
             j.put("states", st.toString());
+            if (dec != null) {   // голос: эмбеддинг и косинусы — чтобы потом можно было пересортировать попытки
+                JSONObject sp = new JSONObject().put("decision", dec.kind.name()).put("speech_s", Math.round(dec.speechS * 100) / 100.0);
+                if (dec.profile != null) sp.put("profile", dec.profile.id);
+                JSONObject cs = new JSONObject();
+                for (int i = 0; i < profiles.list.size(); i++) cs.put(profiles.list.get(i).id, Math.round(dec.cos[i] * 1000) / 1000.0);
+                sp.put("cos", cs);
+                org.json.JSONArray e = new org.json.JSONArray(); for (float v : lastEmb) e.put(Math.round(v * 1e6) / 1e6);
+                sp.put("emb", e);
+                j.put("speaker", sp);
+            }
             try (FileOutputStream o = new FileOutputStream(new File(d, base + ".json"))) { o.write(j.toString(1).getBytes(StandardCharsets.UTF_8)); }
             Log.i(TAG, "сохранено " + base + " ok=" + ok + " | " + hyp);
         } catch (Exception e) { Log.e(TAG, "save", e); }
+        return base;
     }
 
     File liveFile() { return new File(dir(), "tts/" + curId() + ".rhvoice.wav"); }
