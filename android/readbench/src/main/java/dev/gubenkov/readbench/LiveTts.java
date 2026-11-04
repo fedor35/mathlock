@@ -34,6 +34,17 @@ final class LiveTts {
         tts = new TextToSpeech(ctx, st -> {
             if (st != TextToSpeech.SUCCESS) { Log.w(TAG, "TTS " + engine + ": init " + st); return; }
             int r = tts.setLanguage(new Locale("ru", "RU"));
+            // выбор голоса: files/tts_voice.txt с именем голоса (список имён — в логе)
+            StringBuilder all = new StringBuilder();
+            try { for (android.speech.tts.Voice v : tts.getVoices()) if ("ru".equals(v.getLocale().getLanguage())) all.append(v.getName()).append(' '); } catch (Exception ignored) {}
+            Log.i(TAG, "TTS голоса ru: " + all);
+            try {
+                File pref = new File(ctx.getExternalFilesDir(null), "tts_voice.txt");
+                if (pref.exists()) {
+                    String want = new String(java.nio.file.Files.readAllBytes(pref.toPath())).trim();
+                    for (android.speech.tts.Voice v : tts.getVoices()) if (v.getName().equalsIgnoreCase(want)) { tts.setVoice(v); break; }
+                }
+            } catch (Exception e) { Log.w(TAG, "tts_voice.txt: " + e); }
             if (tts.getVoice() != null) voice = tts.getVoice().getName();
             ready = r >= TextToSpeech.LANG_AVAILABLE;
             Log.i(TAG, "TTS " + engine + ": язык ru → " + r + ", голос " + voice + (ready ? "" : " — русский голос не установлен"));
