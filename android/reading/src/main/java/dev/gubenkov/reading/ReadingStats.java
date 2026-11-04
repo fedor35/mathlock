@@ -22,6 +22,16 @@ public final class ReadingStats {
     /** Дочитан ли текст хотя бы до 80% — только такие попытки идут в оценку уровня. */
     public boolean counts() { return words > 0 && reached >= Math.ceil(words * 0.8); }
 
+    /**
+     * Итог по финальной сверке {@code r}; «дочитано до» — по потоковой сверке той же гипотезы ({@code live}, хвост свободен).
+     * Финальная сверка натягивает гипотезу на весь текст и красит непрочитанное в WRONG, поэтому по ней одной «дочитано»
+     * выходило всегда: обрывки в 1–4 с и разговор после чтения шли в журнал попытками с точностью 3–20% (ночь 04→05.11).
+     */
+    public static ReadingStats of(ReadingMatcher.Result r, ReadingMatcher.Result live, int[] letterFrames, float frameSec) {
+        ReadingStats s = of(r, letterFrames, frameSec);
+        return new ReadingStats(s.words, s.ok, s.wrong, Math.min(s.reached, live.progressWords), s.seconds);
+    }
+
     /** @param letterFrames кадр (FRAME_SEC) каждой буквы гипотезы без пробелов, как в StreamingRecognizer. */
     public static ReadingStats of(ReadingMatcher.Result r, int[] letterFrames, float frameSec) {
         int W = r.states.length, ok = 0, wrong = 0, reached = 0, first = -1, last = -1;
