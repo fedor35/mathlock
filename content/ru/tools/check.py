@@ -36,6 +36,6 @@ for n, line in enumerate(open(sys.argv[1], encoding='utf-8'), 1):
     for w in o['new_words']:
         chk(o['id'] + ' nw', w['word']); chk(o['id'] + ' ex', w['explain'])
 print(dict(sorted(cnt.items())))
-want = {1: 35, 2: 35, 3: 30, 4: 30, 5: 20, 6: 25, 7: 25, 8: 20, 9: 20}
+want = {1: 35, 2: 35, 3: 30, 4: 30, 5: 50, 6: 55, 7: 55, 8: 50, 9: 50}
 if dict(cnt) != want: errs.append(f'counts {dict(cnt)}')
 print('\n'.join(errs) or 'OK'); sys.exit(1 if errs else 0)
