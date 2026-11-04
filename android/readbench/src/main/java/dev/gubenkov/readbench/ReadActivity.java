@@ -152,7 +152,11 @@ public class ReadActivity extends Activity {
         mic = new KidUi.IconButton(this, KidUi.Icon.MIC, pal.accent, Color.WHITE);
         LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(dp(150), dp(150)); mlp.gravity = Gravity.CENTER_HORIZONTAL; mlp.topMargin = dp(10);
         mic.setOnClickListener(v -> {
-            if (recording) { recording = false; return; }
+            if (recording) {
+                // дребезг: второй тап сразу после первого (дети жмут сериями) запись не обрывает
+                if (System.currentTimeMillis() - recStartedAt < 800) return;
+                recording = false; return;
+            }
             stopAudio();   // не записывать эталон из динамика вместе с ребёнком
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1); return;
@@ -574,6 +578,7 @@ public class ReadActivity extends Activity {
 
     /** Идёт перечитывание красных слов (новая запись дописывает к прошлому результату этого же текста). */
     volatile boolean repairing;
+    volatile long recStartedAt;
     /** Отладка перечитывания: --es wav2 file.wav — после первой записи через 3 с подать вторую (как повторное нажатие микрофона). */
     String debugWav;
     boolean wav2Done;
@@ -584,8 +589,9 @@ public class ReadActivity extends Activity {
         if (model == null) { runOnUiThread(() -> status.setText("Подожди, готовлюсь…")); return; }
         // текст уже читали и остались красные или непрочитанные слова — это перечитывание: зелёное остаётся зелёным
         final ReadingMatcher.Result prev = (!duel && lastResult != null && !lastResult.complete && shownFor == cur) ? lastResult : null;
+        final ReadingMatcher.Result before = lastResult;   // пустая запись вернёт экран как был
         repairing = prev != null;
-        recording = true;
+        recording = true; recStartedAt = System.currentTimeMillis();
         int chunk = SR / 10;
         // отладка: am start … --es wav file.wav — подать файл в темпе реального времени вместо микрофона
         String wavName = debugWav != null ? debugWav : getIntent().getStringExtra("wav");
@@ -641,7 +647,21 @@ public class ReadActivity extends Activity {
         final String h = hyp;
         int[] lfs = new int[rec.letterFrames.size()];
         for (int i = 0; i < lfs.length; i++) lfs[i] = rec.letterFrames.get(i);
-        final ReadingStats stats = ReadingStats.of(fin, matcher.match(cur, hyp, false, prev), lfs, StreamingRecognizer.FRAME_SEC);
+        final ReadingMatcher.Result live = matcher.match(cur, hyp, false, prev);
+        final ReadingStats stats = ReadingStats.of(fin, live, lfs, StreamingRecognizer.FRAME_SEC);
+        // пустое нажатие или разговор мимо текста: ни одного слова текста не прочитано — тихо забываем
+        // (иначе прошлый результат затирался «красным», и следующее настоящее чтение шло как перечитывание мимо журнала)
+        boolean junk = hyp.replace(" ", "").length() < 3 || (prev == null && live.progressWords == 0);
+        if (junk && !done) {
+            Log.i(TAG, "пустая запись (" + String.format(java.util.Locale.ROOT, "%.1f", rec.samples() / (float) SR) + " с): «" + hyp + "» — не засчитываю");
+            runOnUiThread(() -> {
+                lastResult = before;
+                me.setEnabled(lastAudio != null); compare.setEnabled(lastAudio != null); setListening(false); repairing = false;
+                render();
+                status.setText("Не расслышал. Нажми и читай вслух");
+            });
+            return;
+        }
         final float[] audio = rec.audio();
         final int[] lf = new int[rec.letterFrames.size()];
         for (int i = 0; i < lf.length; i++) lf[i] = rec.letterFrames.get(i);
