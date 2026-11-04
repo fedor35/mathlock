@@ -57,4 +57,11 @@ public class AdaptiveLevelTest {
         assertFalse(a.nextIsChallenge());
         assertEquals("неудачный вызов не понижает", 5, a.level());
     }
+
+    @Test public void tsvRoundTripWithRecording() {
+        AdaptiveLevel.Attempt a = new AdaptiveLevel.Attempt(5, "ru-L1-001", 1, 30.5f, 0.95f, true, "20261104_180000_ru-L1-001");
+        AdaptiveLevel.Attempt b = AdaptiveLevel.Attempt.parse(a.toTsv());
+        assertEquals("20261104_180000_ru-L1-001", b.rec); assertTrue(b.challenge); assertEquals(30.5f, b.wcpm, 0.01f);
+        assertNull(AdaptiveLevel.Attempt.parse(new AdaptiveLevel.Attempt(5, "x", 1, 1, 1, false).toTsv()).rec);   // старый формат
+    }
 }
