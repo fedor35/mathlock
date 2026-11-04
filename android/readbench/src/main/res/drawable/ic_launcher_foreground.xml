@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Раскрытая книга с «слогами» двух цветов (как в тексте на экране) и коралловый микрофон над ней -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- тень книги -->
+    <path android:fillColor="#2A4FA8" android:pathData="M54,53 C46,47 36,46 27,49 L27,84 C36,81 46,82 54,88 C62,82 72,81 81,84 L81,49 C72,46 62,47 54,53 Z"/>
+    <!-- страницы -->
+    <path android:fillColor="#FFFFFF" android:pathData="M54,51 C46,45 36,44 28,47 L28,81 C36,78 46,79 54,85 Z"/>
+    <path android:fillColor="#FFF4DC" android:pathData="M54,51 C62,45 72,44 80,47 L80,81 C72,78 62,79 54,85 Z"/>
+    <!-- корешок -->
+    <path android:strokeColor="#2A4FA8" android:strokeWidth="2.2" android:strokeLineCap="round" android:pathData="M54,51 L54,85"/>
+    <!-- слоги: синий / красный -->
+    <path android:fillColor="#1F3F9E" android:pathData="M33,54.5 h7 a1.5,1.5 0 0 1 0,3 h-7 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#B8301F" android:pathData="M42,54.5 h7 a1.5,1.5 0 0 1 0,3 h-7 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#B8301F" android:pathData="M33,61.5 h5 a1.5,1.5 0 0 1 0,3 h-5 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#1F3F9E" android:pathData="M40,61.5 h9 a1.5,1.5 0 0 1 0,3 h-9 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#1F3F9E" android:pathData="M33,68.5 h8 a1.5,1.5 0 0 1 0,3 h-8 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#B8301F" android:pathData="M43,68.5 h6 a1.5,1.5 0 0 1 0,3 h-6 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#B8301F" android:pathData="M59,54.5 h6 a1.5,1.5 0 0 1 0,3 h-6 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#1F3F9E" android:pathData="M67,54.5 h8 a1.5,1.5 0 0 1 0,3 h-8 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#1F3F9E" android:pathData="M59,61.5 h9 a1.5,1.5 0 0 1 0,3 h-9 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#B8301F" android:pathData="M70,61.5 h5 a1.5,1.5 0 0 1 0,3 h-5 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#B8301F" android:pathData="M59,68.5 h7 a1.5,1.5 0 0 1 0,3 h-7 a1.5,1.5 0 0 1 0,-3 z"/>
+    <path android:fillColor="#1F3F9E" android:pathData="M68,68.5 h7 a1.5,1.5 0 0 1 0,3 h-7 a1.5,1.5 0 0 1 0,-3 z"/>
+    <!-- микрофон -->
+    <path android:fillColor="#E8553D" android:pathData="M48,25 a6,6 0 0 1 12,0 v10 a6,6 0 0 1 -12,0 z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M50.5,27 h7 a1,1 0 0 1 0,2 h-7 a1,1 0 0 1 0,-2 z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M50.5,31 h7 a1,1 0 0 1 0,2 h-7 a1,1 0 0 1 0,-2 z"/>
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M43.5,33 a10.5,10.5 0 0 0 21,0"/>
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M54,43.5 L54,48"/>
+</vector>

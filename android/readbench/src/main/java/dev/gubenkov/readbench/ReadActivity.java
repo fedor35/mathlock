@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
@@ -23,7 +24,7 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.UnderlineSpan;
 import android.util.Log;
 import android.view.Gravity;
-import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -53,9 +54,9 @@ import dev.gubenkov.reading.StreamingRecognizer;
 public class ReadActivity extends Activity {
     static final String TAG = "ReadBench";
     static final int SR = 16000;
-    static final int[] SYL = {Color.rgb(25, 60, 160), Color.rgb(190, 40, 40)};
+    int[] SYL = {Color.rgb(25, 60, 160), Color.rgb(190, 40, 40)};
 
-    TextView textView, status, debug;
+    TextView textView, status, debug, badge;
     final List<JSONObject> texts = new ArrayList<>();
     int idx = 0;
     ReadingText cur;
@@ -68,48 +69,87 @@ public class ReadActivity extends Activity {
     float[] lastAudio;
     int[] lastLetterFrames;
     AudioTrack track;
-    Button me, compare;
+    KidUi.Palette pal;
+    KidUi.IconButton mic, me, compare, listenBtn, nextBtn;
+    KidUi.ConfettiView confetti;
 
+    int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+
+    /** Детский экран: текст в карточке, одна большая кнопка-микрофон, мелкие круглые кнопки без подписей.
+     *  Отладочная строка скрыта — долгое нажатие на микрофон показывает/прячет её. */
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
-        LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(32, 48, 32, 32);
-        textView = new TextView(this); textView.setTextSize(34); textView.setLineSpacing(0, 1.25f);
-        textView.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL)); textView.setTextColor(Color.BLACK);
-        status = new TextView(this); status.setTextSize(20); status.setGravity(Gravity.CENTER); status.setPadding(0, 24, 0, 24);
-        debug = new TextView(this); debug.setTextSize(12); debug.setTextColor(Color.GRAY);
-        LinearLayout row = new LinearLayout(this);
-        Button read = new Button(this); read.setText("🎤 Читать");
-        Button listen = new Button(this); listen.setText("🔊 Послушать");
-        Button next = new Button(this); next.setText("Дальше ▶");
-        row.addView(read, new LinearLayout.LayoutParams(0, -2, 1)); row.addView(listen, new LinearLayout.LayoutParams(0, -2, 1));
-        row.addView(next, new LinearLayout.LayoutParams(0, -2, 1));
-        LinearLayout row2 = new LinearLayout(this);
-        me = new Button(this); me.setText("🗣 Я");
-        compare = new Button(this); compare.setText("⇄ Сравнить");
-        row2.addView(me, new LinearLayout.LayoutParams(0, -2, 1)); row2.addView(compare, new LinearLayout.LayoutParams(0, -2, 1));
-        me.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, null));
-        compare.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, this::listen));
+        pal = KidUi.Palette.of(this);
+        SYL = new int[]{pal.syl0, pal.syl1};
+        getWindow().setStatusBarColor(pal.bg); getWindow().setNavigationBarColor(pal.bg);
+        if (!pal.night) getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+
+        FrameLayout root = new FrameLayout(this); root.setBackgroundColor(pal.bg);
+        LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(20), dp(28), dp(20), dp(20));
+
+        textView = new TextView(this); textView.setTextSize(36); textView.setLineSpacing(0, 1.3f);
+        textView.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL)); textView.setTextColor(pal.text);
+        textView.setGravity(Gravity.CENTER_VERTICAL | Gravity.START); textView.setPadding(dp(22), dp(22), dp(22), dp(22));
+        GradientDrawable card = new GradientDrawable(); card.setColor(pal.card); card.setCornerRadius(dp(28));
+        textView.setBackground(card); textView.setElevation(dp(2));
         textView.setMovementMethod(LinkMovementMethod.getInstance());
         textView.setHighlightColor(Color.TRANSPARENT);
-        l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row2); l.addView(row); l.addView(debug);
-        l.setBackgroundColor(Color.rgb(255, 252, 240));
-        setContentView(l);
 
-        read.setOnClickListener(v -> {
+        status = new TextView(this); status.setTextSize(19); status.setGravity(Gravity.CENTER); status.setTextColor(pal.status);
+        status.setPadding(0, dp(18), 0, dp(14));
+
+        debug = new TextView(this); debug.setTextSize(11); debug.setTextColor(pal.debug); debug.setVisibility(View.GONE);
+        debug.setPadding(0, dp(6), 0, 0);
+
+        // второстепенные действия: послушать, я, сравнить, дальше — иконками
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER);
+        listenBtn = new KidUi.IconButton(this, KidUi.Icon.SPEAKER, pal.chip, pal.chipIcon);
+        me = new KidUi.IconButton(this, KidUi.Icon.PERSON, pal.chip, pal.chipIcon);
+        compare = new KidUi.IconButton(this, KidUi.Icon.COMPARE, pal.chip, pal.chipIcon);
+        nextBtn = new KidUi.IconButton(this, KidUi.Icon.NEXT, pal.nextChip, pal.nextIcon);
+        for (View v : new View[]{listenBtn, me, compare, nextBtn}) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(60), dp(60)); lp.setMargins(dp(10), 0, dp(10), 0); row.addView(v, lp);
+        }
+        me.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, null));
+        compare.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, this::listen));
+        listenBtn.setOnClickListener(v -> listen());
+        nextBtn.setOnClickListener(v -> { recording = false; idx = (idx + 1) % texts.size(); show(); });
+
+        // главная кнопка: микрофон; во время чтения — красная, пульсирует, иконка «стоп»
+        mic = new KidUi.IconButton(this, KidUi.Icon.MIC, pal.accent, Color.WHITE);
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(dp(150), dp(150)); mlp.gravity = Gravity.CENTER_HORIZONTAL; mlp.topMargin = dp(10);
+        mic.setOnClickListener(v -> {
             if (recording) { recording = false; return; }
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1); return;
             }
             new Thread(this::readLoop).start();
         });
-        next.setOnClickListener(v -> { recording = false; idx = (idx + 1) % texts.size(); show(); });
-        listen.setOnClickListener(v -> listen());
+        mic.setOnLongClickListener(v -> { debug.setVisibility(debug.getVisibility() == View.GONE ? View.VISIBLE : View.GONE); return true; });
+
+        l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row); l.addView(mic, mlp); l.addView(debug);
+        root.addView(l, new FrameLayout.LayoutParams(-1, -1));
+        confetti = new KidUi.ConfettiView(this); root.addView(confetti, new FrameLayout.LayoutParams(-1, -1));
+
+        // «Молодец!» — крупная плашка, выпрыгивает и гаснет
+        badge = new TextView(this); badge.setText("Молодец!"); badge.setTextSize(44); badge.setTextColor(Color.WHITE);
+        badge.setTypeface(Typeface.create("sans-serif", Typeface.BOLD)); badge.setPadding(dp(36), dp(18), dp(36), dp(18));
+        GradientDrawable bd = new GradientDrawable(); bd.setColor(pal.success); bd.setCornerRadius(dp(40)); badge.setBackground(bd);
+        badge.setElevation(dp(8)); badge.setVisibility(View.GONE);
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-2, -2); blp.gravity = Gravity.CENTER; root.addView(badge, blp);
+        setContentView(root);
+
         // папки создаёт само приложение: созданные через adb (владелец shell) оно не читает
         new File(dir(), "tts/cheer").mkdirs(); new File(dir(), "recordings").mkdirs();
         loadTexts();
         idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
         show();
         new Thread(() -> { loadModel(); if (getIntent().hasExtra("wav")) readLoop(); }).start();
+    }
+
+    void setListening(boolean on) {
+        mic.set(on ? KidUi.Icon.STOP : KidUi.Icon.MIC, on ? pal.listening : pal.accent, Color.WHITE);
+        mic.setPulsing(on);
     }
 
     File dir() { return getExternalFilesDir(null); }
@@ -147,7 +187,7 @@ public class ReadActivity extends Activity {
         cur = new ReadingText(texts.get(idx).optString("text"));
         lastResult = null; lastAudio = null; lastLetterFrames = null;
         me.setEnabled(false); compare.setEnabled(false);
-        status.setText("Нажми «Читать» и прочитай вслух.\nНе знаешь слово — нажми на него");
+        status.setText("Нажми на микрофон и читай вслух");
         render();
     }
 
@@ -174,19 +214,19 @@ public class ReadActivity extends Activity {
             if (lastResult != null) {
                 ReadingMatcher.State state = lastResult.states[w];
                 if (state == ReadingMatcher.State.OK)
-                    sb.setSpan(new BackgroundColorSpan(Color.rgb(200, 240, 200)), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    sb.setSpan(new BackgroundColorSpan(pal.okBg), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 else if (state == ReadingMatcher.State.WRONG) {
-                    sb.setSpan(new BackgroundColorSpan(Color.rgb(255, 210, 210)), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    sb.setSpan(new BackgroundColorSpan(pal.wrongBg), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     sb.setSpan(new UnderlineSpan(), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 } else if (w == lastResult.progressWords)
-                    sb.setSpan(new BackgroundColorSpan(Color.rgb(255, 240, 170)), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    sb.setSpan(new BackgroundColorSpan(pal.curBg), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
         textView.setText(sb);
     }
 
     void readLoop() {
-        if (model == null) { runOnUiThread(() -> status.setText("модель ещё грузится…")); return; }
+        if (model == null) { runOnUiThread(() -> status.setText("Подожди, готовлюсь…")); return; }
         recording = true;
         int chunk = SR / 10;
         // отладка: am start … --es wav file.wav — подать файл в темпе реального времени вместо микрофона
@@ -199,7 +239,7 @@ public class ReadActivity extends Activity {
         StreamingRecognizer rec = new StreamingRecognizer(model);
         ReadingMatcher matcher = new ReadingMatcher();
         short[] s = new short[chunk]; float[] f = new float[chunk];
-        runOnUiThread(() -> status.setText("Слушаю… (нажми «Читать» ещё раз, чтобы закончить)"));
+        runOnUiThread(() -> { status.setText("Слушаю…"); setListening(true); });
         if (ar != null) ar.startRecording();
         long lastDecode = 0; String hyp = ""; long decMs = 0; boolean done = false;
         long maxSamples = SR * 120L;
@@ -238,10 +278,9 @@ public class ReadActivity extends Activity {
         for (int i = 0; i < lf.length; i++) lf[i] = rec.letterFrames.get(i);
         runOnUiThread(() -> {
             lastResult = fin; lastAudio = audio; lastLetterFrames = lf;
-            me.setEnabled(true); compare.setEnabled(true);
+            me.setEnabled(true); compare.setEnabled(true); setListening(false);
             render();
-            status.setText((ok ? "Молодец! Всё прочитано верно 🎉" : "Почти! Красные слова прочитай ещё раз")
-                    + "\nНажми на слово — услышишь, как ты его прочитал");
+            status.setText(ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз");
             debug.setText(h);
             if (ok) celebrate();
         });
@@ -257,6 +296,10 @@ public class ReadActivity extends Activity {
         if (cheer != null && cheer.length > 0) { final File c = cheer[rnd.nextInt(cheer.length)]; then = () -> playFile(c); }
         Log.i(TAG, "успех: звук " + pcm.length * 1000 / sr + " мс, возглас " + (cheer == null ? 0 : cheer.length) + " файлов");
         playPcm(pcm, sr, then);
+        confetti.start(pal.confetti);
+        badge.setVisibility(View.VISIBLE); badge.setAlpha(0f); badge.setScaleX(0.3f); badge.setScaleY(0.3f);
+        badge.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(450).setInterpolator(new android.view.animation.OvershootInterpolator(2f))
+                .withEndAction(() -> badge.animate().alpha(0f).setStartDelay(1600).setDuration(500).withEndAction(() -> badge.setVisibility(View.GONE)));
     }
 
     void playFile(File f) {
@@ -293,7 +336,7 @@ public class ReadActivity extends Activity {
         try {
             if (player != null) player.release();
             player = new MediaPlayer(); player.setDataSource(f.getPath()); player.prepare(); player.start();
-            status.setText("🔊 " + voiceName(f));
+            status.setText(voiceName(f));
         } catch (Exception e) { status.setText("ошибка воспроизведения: " + e); }
     }
 
@@ -324,7 +367,7 @@ public class ReadActivity extends Activity {
             if (player != null && player.isPlaying()) player.pause();
             playPcm(java.util.Arrays.copyOfRange(a.data, from, to), a.sr, null);
             Log.i(TAG, String.format("эталон слова %d «%s» %.2f–%.2f с из %s", w, cur.words.get(w).display, t0, t1, f.getName()));
-            status.setText("🔊 Как надо: " + cur.words.get(w).display + " (" + voiceName(f) + ")");
+            status.setText("Как надо: " + cur.words.get(w).display + " (" + voiceName(f) + ")");
         } catch (Exception e) { status.setText("нет разметки слов: " + e.getMessage()); }
     }
 
@@ -420,7 +463,7 @@ public class ReadActivity extends Activity {
             });
         }
         track.play();
-        status.setText(then != null ? "🗣 Ты… потом 🔊 как надо" : "🗣 Твоё чтение");
+        status.setText(then != null ? "Ты… потом как надо" : "Твоё чтение");
     }
 
     @Override public void onRequestPermissionsResult(int c, String[] p, int[] g) {
