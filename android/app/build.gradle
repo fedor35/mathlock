@@ -36,5 +36,25 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    // Чтение вслух (модуль reading): QNN HTP грузит свои .so с диска — библиотеки распаковываются при установке.
+    // GPU- и DSP-бэкенды QNN не используются (только HTP) — не возим.
+    packaging { jniLibs { useLegacyPackaging true; excludes += ["**/libQnnGpu.so", "**/libQnnDsp*.so"] } }
+    // Пакет чтения внутрь APK (необязательно): android/app/reading-pack/ (в git не входит) → assets/reading/.
+    // Модели не сжимаются, чтобы копировались в files/ потоком без распаковки.
+    androidResources { noCompress += ["onnx", "ogg", "wav", "bin"] }
+    sourceSets { main { assets.srcDirs += layout.buildDirectory.dir("generated/readingPack").get().asFile } }
 }
-dependencies { }
+
+def readingPack = file("reading-pack")
+def readingPackOut = layout.buildDirectory.dir("generated/readingPack/reading")
+tasks.register("copyReadingPack", Sync) {
+    from(readingPack)
+    into(readingPackOut)
+    // без папки reading-pack задача просто чистит выход: APK без моделей (их ставят из папки в настройках)
+}
+tasks.named("preBuild") { dependsOn("copyReadingPack") }
+
+dependencies {
+    implementation project(":reading")
+    testImplementation "junit:junit:4.13.2"
+}

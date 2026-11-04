@@ -18,8 +18,11 @@ import android.widget.TextView;
 
 import java.util.Random;
 
-/** Экран блокировки: случайные примеры из таблицы умножения, цифровая клавиатура. */
-public class QuizActivity extends Activity {
+/**
+ * Экран блокировки: случайные примеры из таблицы умножения, цифровая клавиатура — или (настройка родителя)
+ * чтение текста вслух ({@link ReadingScreen}). Чтение — только если для него всё есть; при любой поломке — примеры.
+ */
+public class QuizActivity extends Activity implements ReadingScreen.Host {
     private Prefs prefs;
     private final Random rnd = new Random();
     private Problem cur;
@@ -30,6 +33,10 @@ public class QuizActivity extends Activity {
     private boolean done;
     private boolean guard;
     public static final String EXTRA_GUARD = "guard";
+    /** Проверка родителем из настроек: "reading" — показать чтение (если оно доступно), "math" — примеры. */
+    public static final String EXTRA_TASK = "task";
+    /** Задание чтения на экране (null — примеры). */
+    private ReadingScreen reading;
     public static final long GUARD_PASS_MS = 10 * 60_000L;
 
     @Override protected void onCreate(Bundle b) {
@@ -44,19 +51,67 @@ public class QuizActivity extends Activity {
         KeyguardManager km = getSystemService(KeyguardManager.class);
         if (km != null) km.requestDismissKeyguard(this, null);
         guard = getIntent().getBooleanExtra(EXTRA_GUARD, false);
+        if (!startReadingIfChosen()) { buildUi(); next(null); }
+    }
+
+    /** Чтение вместо примеров, если так решил родитель и всё для него есть (TaskPicker). */
+    private boolean startReadingIfChosen() {
+        try {
+            TaskPicker.Mode mode = TaskPicker.Mode.of(prefs.taskMode());
+            String forced = getIntent().getStringExtra(EXTRA_TASK);
+            if ("reading".equals(forced)) mode = TaskPicker.Mode.READING;
+            else if ("math".equals(forced)) mode = TaskPicker.Mode.MATH;
+            if (guard || mode == TaskPicker.Mode.MATH) return false;
+            ReadingPack pack = ReadingEngine.pack(this);
+            boolean mic = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            boolean ready = mic && pack.ready(prefs.htpBroken());
+            int counter = prefs.mixedCounter();
+            if (mode == TaskPicker.Mode.MIXED && forced == null) prefs.bumpMixedCounter();
+            if (TaskPicker.pick(mode, guard, ready, counter) != TaskPicker.Kind.READING) {
+                if (!ready) android.util.Log.i(ReadingEngine.TAG, "чтение недоступно (микрофон " + mic + ", " + pack.missing(prefs.htpBroken()) + ") — примеры");
+                return false;
+            }
+            reading = new ReadingScreen(this, this, prefs, pack);
+            if (!reading.start()) { stopReading(); return false; }
+            setContentView(reading.view());
+            return true;
+        } catch (Throwable e) {   // что бы ни случилось с чтением — ребёнок получает примеры
+            android.util.Log.e(ReadingEngine.TAG, "экран чтения", e);
+            stopReading();
+            return false;
+        }
+    }
+
+    private void stopReading() {
+        if (reading != null) { reading.close(); reading = null; }
+    }
+
+    @Override public void onReadingPassed() {
+        if (done) return;
+        if (!LockService.screenOn(this)) {
+            // экран погас, пока шло «Молодец!»: это уже новая блокировка — закрываемся, не снимая её
+            done = true; stopReading(); finishAndRemoveTask(); return;
+        }
+        unlock();
+    }
+
+    @Override public void onReadingFallback(String hint) {
+        if (done) return;
+        stopReading();
         buildUi();
-        next(null);
+        next(hint);
     }
 
     @Override protected void onNewIntent(android.content.Intent i) {
         super.onNewIntent(i);
         setIntent(i);
         boolean g = i.getBooleanExtra(EXTRA_GUARD, false);
-        if (g != guard) { guard = g; correct = 0; buildUi(); next(null); }
+        if (g != guard) { guard = g; correct = 0; stopReading(); buildUi(); next(null); }
     }
 
     @Override public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);
+        if (reading != null) return;   // экран чтения сам подстраивается под размер
         buildUi();
         tvProblem.setText(guard ? "Родительский код" : cur.toString());
         tvInput.setText(input);
@@ -73,6 +128,7 @@ public class QuizActivity extends Activity {
 
     @Override protected void onStop() {
         super.onStop();
+        if (reading != null) reading.onStop();
         // Если нас свернули, а разблокировка не пройдена — вернёмся сами (страховка к WatchService).
         if (!done && !guard && prefs.enabled() && prefs.locked()) h.postDelayed(() -> { if (!done) LockService.showQuiz(this); }, 400);
     }
@@ -221,8 +277,11 @@ public class QuizActivity extends Activity {
         }
     }
 
+    @Override protected void onDestroy() { stopReading(); super.onDestroy(); }
+
     private void unlock() {
         done = true;
+        stopReading();
         if (guard) {
             // Родитель ввёл код: 10 минут Настройки открыты без вопросов.
             prefs.setGuardPassUntil(android.os.SystemClock.elapsedRealtime() + GUARD_PASS_MS);
