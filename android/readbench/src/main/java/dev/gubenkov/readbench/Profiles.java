@@ -138,6 +138,15 @@ final class Profiles {
         Log.i(TAG, "профиль " + from.id + " объединён с " + into.id);
     }
 
+    /** Удалить профиль без попыток (заведён по обрывку); журнал переименовывается, а не стирается. */
+    void delete(SpeakerId.Profile p) {
+        File j = journal(p.id); if (j.exists()) j.renameTo(new File(j.getPath() + ".deleted"));
+        new File(dir, p.id + ".json").renameTo(new File(dir, p.id + ".json.deleted"));
+        list.remove(p);
+        if (p.id.equals(lastId)) setLast(list.isEmpty() ? "" : list.get(0).id);
+        Log.i(TAG, "профиль " + p.id + " удалён");
+    }
+
     /** Голосовая часть попытки: recordings/<rec>.json → speaker {emb, speech_s, cos, decision} или null. */
     JSONObject speakerOf(String rec) {
         try { return new JSONObject(read(new File(root, "recordings/" + rec + ".json"))).getJSONObject("speaker"); }
