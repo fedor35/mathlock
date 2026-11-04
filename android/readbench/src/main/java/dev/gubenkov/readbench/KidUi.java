@@ -26,6 +26,8 @@ final class KidUi {
         final boolean night;
         final int bg, card, text, status, accent, listening, chip, chipIcon, nextChip, nextIcon;
         final int syl0, syl1, okBg, wrongBg, curBg, debug, success;
+        /** Соревнования: золото лидера, фон кнопки-кубка, две большие кнопки меню. */
+        final int gold, trophyChip, trophyIcon, duelBtn, recordsBtn;
         final int[] confetti;
 
         Palette(boolean night) {
@@ -38,6 +40,8 @@ final class KidUi {
                 syl0 = Color.rgb(143, 180, 255); syl1 = Color.rgb(255, 155, 138);
                 okBg = Color.rgb(36, 74, 42); wrongBg = Color.rgb(90, 42, 42); curBg = Color.rgb(90, 74, 26);
                 debug = Color.rgb(110, 120, 140); success = Color.rgb(60, 170, 100);
+                gold = Color.rgb(255, 200, 60); trophyChip = Color.rgb(64, 56, 34); trophyIcon = Color.rgb(255, 200, 60);
+                duelBtn = Color.rgb(240, 99, 74); recordsBtn = Color.rgb(230, 170, 40);
             } else {
                 bg = Color.rgb(255, 248, 231); card = Color.WHITE; text = Color.rgb(30, 30, 42); status = Color.rgb(91, 91, 107);
                 accent = Color.rgb(59, 111, 217); listening = Color.rgb(232, 85, 61);
@@ -46,6 +50,8 @@ final class KidUi {
                 syl0 = Color.rgb(31, 63, 158); syl1 = Color.rgb(184, 48, 31);
                 okBg = Color.rgb(201, 240, 201); wrongBg = Color.rgb(255, 208, 208); curBg = Color.rgb(255, 233, 168);
                 debug = Color.GRAY; success = Color.rgb(46, 160, 90);
+                gold = Color.rgb(235, 170, 20); trophyChip = Color.rgb(255, 236, 170); trophyIcon = Color.rgb(190, 130, 10);
+                duelBtn = Color.rgb(232, 85, 61); recordsBtn = Color.rgb(240, 170, 30);
             }
             confetti = new int[]{Color.rgb(255, 196, 0), Color.rgb(255, 87, 87), Color.rgb(72, 199, 142),
                     Color.rgb(80, 150, 255), Color.rgb(255, 128, 200), Color.rgb(170, 110, 255)};
@@ -55,9 +61,39 @@ final class KidUi {
             int m = c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
             return new Palette(m == Configuration.UI_MODE_NIGHT_YES);
         }
+
+        /** Палитра экрана + цвет системных полос под неё. */
+        static Palette setup(android.app.Activity a) {
+            Palette pal = of(a);
+            a.getWindow().setStatusBarColor(pal.bg); a.getWindow().setNavigationBarColor(pal.bg);
+            if (!pal.night) a.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            return pal;
+        }
     }
 
-    enum Icon { MIC, STOP, SPEAKER, PERSON, COMPARE, NEXT }
+    /** Кружок-аватар чтеца: цвет профиля и эмодзи (или первая буква имени). */
+    static final class Avatar extends View {
+        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); int color; String glyph; boolean crown;
+        Avatar(Context c, int color, String glyph) { super(c); this.color = color; this.glyph = glyph; p.setTextAlign(Paint.Align.CENTER); }
+        @Override protected void onDraw(Canvas cv) {
+            float w = getWidth(), h = getHeight(), r = Math.min(w, h) / 2 * 0.9f;
+            p.setStyle(Paint.Style.FILL); p.setColor(color); cv.drawCircle(w / 2, h / 2, r, p);
+            p.setColor(Color.WHITE); p.setTextSize(r * 1.1f);
+            cv.drawText(glyph, w / 2, h / 2 - (p.descent() + p.ascent()) / 2, p);
+        }
+    }
+
+    /** Короткий игровой звук из Sounds (PCM 16 бит моно) одним AudioTrack. */
+    static void play(short[] pcm, int sr) {
+        android.media.AudioTrack t = new android.media.AudioTrack.Builder()
+                .setAudioAttributes(new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).build())
+                .setAudioFormat(new android.media.AudioFormat.Builder().setSampleRate(sr).setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(android.media.AudioTrack.MODE_STATIC).setBufferSizeInBytes(Math.max(pcm.length * 2, 4096)).build();
+        t.write(pcm, 0, pcm.length); t.play();
+    }
+
+    enum Icon { MIC, STOP, SPEAKER, PERSON, COMPARE, NEXT, TROPHY, DUEL }
 
     /** Круглая кнопка: фон + иконка векторами. В режиме pulsing вокруг расходятся кольца («слушаю»). */
     static final class IconButton extends View {
@@ -140,6 +176,28 @@ final class KidUi {
                     p.setStyle(Paint.Style.FILL_AND_STROKE); p.setStrokeWidth(r * 0.1f); path.reset();
                     path.moveTo(cx - 0.28f * r, cy - 0.42f * r); path.lineTo(cx + 0.38f * r, cy); path.lineTo(cx - 0.28f * r, cy + 0.42f * r); path.close();
                     cv.drawPath(path, p);
+                    break;
+                case TROPHY:   // кубок: чаша с ручками, ножка, подставка
+                    p.setStyle(Paint.Style.FILL);
+                    rect.set(cx - 0.34f * r, cy - 0.6f * r, cx + 0.34f * r, cy + 0.2f * r); cv.drawRoundRect(rect, 0.3f * r, 0.3f * r, p);
+                    rect.set(cx - 0.34f * r, cy - 0.6f * r, cx + 0.34f * r, cy - 0.3f * r); cv.drawRect(rect, p);
+                    rect.set(cx - 0.1f * r, cy + 0.15f * r, cx + 0.1f * r, cy + 0.45f * r); cv.drawRect(rect, p);
+                    rect.set(cx - 0.3f * r, cy + 0.42f * r, cx + 0.3f * r, cy + 0.6f * r); cv.drawRoundRect(rect, 0.06f * r, 0.06f * r, p);
+                    p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(r * 0.1f);
+                    rect.set(cx - 0.62f * r, cy - 0.5f * r, cx - 0.2f * r, cy - 0.05f * r); cv.drawArc(rect, 90, 180, false, p);
+                    rect.set(cx + 0.2f * r, cy - 0.5f * r, cx + 0.62f * r, cy - 0.05f * r); cv.drawArc(rect, -90, 180, false, p);
+                    break;
+                case DUEL:   // два микрофона наклонены друг к другу
+                    for (int k = -1; k <= 1; k += 2) {
+                        cv.save(); cv.rotate(k * 22, cx + k * 0.28f * r, cy);
+                        float x = cx + k * 0.28f * r;
+                        p.setStyle(Paint.Style.FILL);
+                        rect.set(x - 0.15f * r, cy - 0.55f * r, x + 0.15f * r, cy + 0.05f * r); cv.drawRoundRect(rect, 0.15f * r, 0.15f * r, p);
+                        p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(r * 0.1f);
+                        rect.set(x - 0.3f * r, cy - 0.3f * r, x + 0.3f * r, cy + 0.22f * r); cv.drawArc(rect, 0, 180, false, p);
+                        cv.drawLine(x, cy + 0.22f * r, x, cy + 0.5f * r, p);
+                        cv.restore();
+                    }
                     break;
             }
         }
