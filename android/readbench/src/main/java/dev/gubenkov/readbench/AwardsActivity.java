@@ -96,7 +96,7 @@ public class AwardsActivity extends Activity {
         LinearLayout row = null; int col = 0;
         for (Achievements.Badge b : show) {
             if (col == 0) { row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); body.addView(row); }
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(150), 1); lp.setMargins(dp(5), dp(5), dp(5), dp(5));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(170), 1); lp.setMargins(dp(5), dp(5), dp(5), dp(5));
             row.addView(tile(b), lp);
             col = (col + 1) % 3;
         }
@@ -124,6 +124,13 @@ public class AwardsActivity extends Activity {
         t.addView(name);
         String sub = b.earned() ? new SimpleDateFormat("d MMM", new Locale("ru")).format(new Date(b.earnedAt)) : b.hint;
         TextView s = text(sub, 11, false, pal.status); s.setGravity(Gravity.CENTER); s.setMaxLines(3); t.addView(s);
+        if (!b.earned() && b.need > 0 && b.have > 0) {   // полоска прогресса: «19 / 25»
+            android.widget.ProgressBar bar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+            bar.setMax(1000); bar.setProgress(Math.round(1000 * Math.min(1f, b.have / b.need)));
+            bar.setProgressTintList(android.content.res.ColorStateList.valueOf(pal.gold));
+            t.addView(bar, new LinearLayout.LayoutParams(-1, dp(8)) {{ topMargin = dp(4); leftMargin = dp(10); rightMargin = dp(10); }});
+            TextView c = text(String.format(Locale.ROOT, "%.0f / %.0f", Math.floor(b.have), b.need), 11, true, pal.status); c.setGravity(Gravity.CENTER); t.addView(c);
+        }
         return t;
     }
 }

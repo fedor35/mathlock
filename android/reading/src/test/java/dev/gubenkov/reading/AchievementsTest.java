@@ -66,5 +66,15 @@ public class AchievementsTest {
         assertEquals("дня", Achievements.days(2)); assertEquals("дней", Achievements.days(14));
     }
 
+    @Test public void progressToNextTier() {
+        AdaptiveLevel lv = new AdaptiveLevel(5);
+        for (int i = 0; i < 7; i++) lv.history.add(at(T0 + i, "t" + i, 5, 47, 1f));
+        Map<String, Achievements.Badge> all = new HashMap<>();
+        for (Achievements.Badge b : Achievements.all(lv, TZ)) all.put(b.id, b);
+        assertEquals(7, all.get("texts_10").have, 0); assertEquals(10, all.get("texts_10").need, 0);
+        assertEquals(47, all.get("speed_50").have, 0.01);
+        assertEquals(0, all.get("texts_5").need, 0);   // заработанная — без счётчика
+    }
+
     static List<String> ids(List<Achievements.Badge> bs) { List<String> r = new ArrayList<>(); for (Achievements.Badge b : bs) r.add(b.id); return r; }
 }

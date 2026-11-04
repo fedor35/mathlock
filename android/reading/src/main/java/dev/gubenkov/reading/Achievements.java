@@ -1,6 +1,7 @@
 package dev.gubenkov.reading;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -34,6 +35,8 @@ public final class Achievements {
         public final String id, icon, title, hint;
         /** Когда заработана (мс); 0 — ещё нет. */
         public long earnedAt;
+        /** Для незаработанной: сколько уже есть и сколько нужно (например 19 из 25 текстов); need 0 — без счётчика. */
+        public float have, need;
         Badge(String id, String icon, String title, String hint) { this.id = id; this.icon = icon; this.title = title; this.hint = hint; }
         public boolean earned() { return earnedAt > 0; }
         @Override public String toString() { return icon + " " + title; }
@@ -84,7 +87,18 @@ public final class Achievements {
             int streak = 0; for (long k = d; days.contains(k); k--) streak++;
             for (int n : STREAK) if (streak >= n) earn(m, "streak_" + n, t);
         }
+        // прогресс к незаработанным ступеням
+        float bestClean = 0; for (AdaptiveLevel.Attempt a : h) if (a.accuracy >= ACC_SPEED) bestClean = Math.max(bestClean, a.wcpm);
+        int maxDay = 0; for (int v : perDay.values()) maxDay = Math.max(maxDay, v);
+        int streakNow = 0; if (!days.isEmpty()) { long last = Collections.max(days); for (long k = last; days.contains(k); k--) streakNow++; }
+        progress(m, "texts_", TEXTS, h.size()); progress(m, "speed_", SPEED, bestClean); progress(m, "perfect_", PERFECT, perfect);
+        progress(m, "challenge_", CHALLENGE, challenge); progress(m, "improve_", IMPROVE, improve); progress(m, "yesterday_", BEAT_YESTERDAY, beat);
+        progress(m, "streak_", STREAK, streakNow); progress(m, "day_", DAY_TEXTS, maxDay);
         return new ArrayList<>(m.values());
+    }
+
+    private static void progress(Map<String, Badge> m, String prefix, int[] tiers, float have) {
+        for (int k : tiers) { Badge b = m.get(prefix + k); if (b != null && !b.earned()) { b.have = have; b.need = k; } }
     }
 
     /** Награды, заработанные последней попыткой журнала (показать сразу после чтения). */
