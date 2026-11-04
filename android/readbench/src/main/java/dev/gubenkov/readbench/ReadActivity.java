@@ -79,6 +79,7 @@ public class ReadActivity extends Activity {
     AdaptiveLevel adapt;
     boolean challenge;
     int textLevel = 1;
+    LiveTts live;   // озвучка на телефоне (RHVoice), файлы tts/<id>.rhvoice.wav + .json
     /** С какого уровня начинать без истории: сын читает целыми словами 30–50 слов/мин (04.11.2026). */
     static final int START_LEVEL = 5;
 
@@ -155,10 +156,19 @@ public class ReadActivity extends Activity {
         new File(dir(), "tts/cheer").mkdirs(); new File(dir(), "recordings").mkdirs();
         loadTexts();
         loadProgress();
+        live = new LiveTts(this, LiveTts.RHVOICE);
         if (getIntent().hasExtra("idx")) idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
         else pickNext();
         show();
-        new Thread(() -> { loadModel(); if (getIntent().hasExtra("wav")) readLoop(); }).start();
+        new Thread(() -> {
+            loadModel();
+            if (getIntent().hasExtra("wav")) readLoop();
+            // отладка: am start … --ez tts_test true — озвучить текущий текст на телефоне, замерить и разметить слова
+            if (getIntent().getBooleanExtra("tts_test", false)) {
+                for (int i = 0; i < 50 && !live.ready(); i++) try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+                runOnUiThread(this::listenLive);
+            }
+        }).start();
     }
 
     void setListening(boolean on) {
@@ -412,7 +422,61 @@ public class ReadActivity extends Activity {
         } catch (Exception e) { Log.e(TAG, "save", e); }
     }
 
+    File liveFile() { return new File(dir(), "tts/" + curId() + ".rhvoice.wav"); }
+
+    /** Озвучить текущий текст на телефоне и сыграть; время слов размечается в фоне своей же CTC-моделью. */
+    void listenLive() {
+        File out = liveFile(); out.getParentFile().mkdirs();
+        if (out.exists() && out.length() > 1000) { playFile(out); status.setText(voiceName(out)); return; }
+        status.setText("Готовлю озвучку…");
+        final String id = curId(); final ReadingText text = cur; final long t0 = System.nanoTime();
+        live.synth(text.source, out, f -> runOnUiThread(() -> {
+            if (f == null) { status.setText("Озвучка на телефоне не получилась"); return; }
+            long ms = (System.nanoTime() - t0) / 1000000;
+            if (id.equals(curId())) { playFile(f); status.setText(voiceName(f)); }
+            new Thread(() -> alignLive(f, text, ms)).start();
+        }));
+    }
+
+    /** Разметка слов озвучки: распознаём свою же моделью и сверяем с текстом (как в ml/word_times.py, но жадно). */
+    void alignLive(File wav, ReadingText text, long synthMs) {
+        try {
+            long a = System.nanoTime();
+            Pcm p = decode(wav);
+            int n = (int) ((long) p.data.length * SR / p.sr); float[] x = new float[n];
+            for (int i = 0; i < n; i++) {   // линейная передискретизация в 16 кГц
+                double src = (double) i * p.sr / SR; int k = (int) src; double fr = src - k;
+                int k1 = Math.min(p.data.length - 1, k + 1);
+                x[i] = (float) ((p.data[k] * (1 - fr) + p.data[k1] * fr) / 32768.0);
+            }
+            if (model == null) { Log.w(TAG, "разметка: модель не загружена"); return; }
+            StreamingRecognizer rec = new StreamingRecognizer(model);
+            for (int i = 0; i < n; i += SR / 10) rec.feed(java.util.Arrays.copyOfRange(x, i, Math.min(n, i + SR / 10)), Math.min(SR / 10, n - i));
+            String hyp = rec.decode();
+            ReadingMatcher.Result r = new ReadingMatcher().match(text, hyp, true);
+            int W = text.words.size(); double[][] t = new double[W][];
+            for (int w = 0; w < W; w++) if (r.hypFirst[w] >= 0 && r.hypLast[w] < rec.letterFrames.size())
+                t[w] = new double[]{rec.letterFrames.get(r.hypFirst[w]) * StreamingRecognizer.FRAME_SEC, (rec.letterFrames.get(r.hypLast[w]) + 1) * StreamingRecognizer.FRAME_SEC};
+            int okW = 0; double dur = n / (double) SR;
+            for (int w = 0; w < W; w++) {   // несопоставленные слова — между соседями
+                if (t[w] != null) { okW++; continue; }
+                double lo = 0; for (int k = w - 1; k >= 0; k--) if (t[k] != null) { lo = t[k][1]; break; }
+                double hi = dur; for (int k = w + 1; k < W; k++) if (t[k] != null) { hi = t[k][0]; break; }
+                t[w] = new double[]{lo, Math.max(lo + 0.2, hi)};
+            }
+            org.json.JSONArray ws = new org.json.JSONArray();
+            for (double[] q : t) ws.put(new org.json.JSONArray().put(Math.round(q[0] * 100) / 100.0).put(Math.round(q[1] * 100) / 100.0));
+            JSONObject j = new JSONObject().put("words", ws).put("engine", "rhvoice:" + live.voice).put("hyp", hyp)
+                    .put("synth_ms", synthMs).put("audio_s", dur).put("matched", okW);
+            File jf = new File(wav.getPath().replaceAll("\\.wav$", ".json"));
+            try (FileOutputStream o = new FileOutputStream(jf)) { o.write(j.toString(1).getBytes(StandardCharsets.UTF_8)); }
+            Log.i(TAG, String.format(java.util.Locale.ROOT, "озвучка на телефоне: %d слов, звук %.1f с, синтез %d мс (RTF %.3f), разметка %d мс, слов сопоставлено %d/%d | %s",
+                    W, dur, synthMs, synthMs / 1000.0 / dur, (System.nanoTime() - a) / 1000000, okW, W, hyp));
+        } catch (Exception e) { Log.e(TAG, "разметка озвучки", e); }
+    }
+
     void listen() {
+        if (live.ready() && !liveFile().exists()) { listenLive(); return; }
         File[] fs = refFiles();
         if (fs.length == 0) { status.setText("Озвучки для этого текста пока нет"); return; }
         File f = fs[Math.floorMod(++voiceIdx, fs.length)];
@@ -516,7 +580,7 @@ public class ReadActivity extends Activity {
         String v = f.getName().split("\\.")[1];
         switch (v) {
             case "skazochnik": return "Сказочник"; case "devochka": return "Девочка"; case "malchik": return "Мальчик";
-            case "velikan": return "Великан"; case "feya": return "Фея"; default: return v;
+            case "velikan": return "Великан"; case "feya": return "Фея"; case "rhvoice": return "Голос телефона"; default: return v;
         }
     }
 
