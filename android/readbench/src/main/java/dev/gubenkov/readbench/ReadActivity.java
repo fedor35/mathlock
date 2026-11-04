@@ -161,7 +161,7 @@ public class ReadActivity extends Activity {
         setContentView(root);
 
         // папки создаёт само приложение: созданные через adb (владелец shell) оно не читает
-        new File(dir(), "tts/cheer").mkdirs(); new File(dir(), "recordings").mkdirs();
+        new File(dir(), "tts").mkdirs(); new File(dir(), "recordings").mkdirs();
         loadTexts();
         profiles = new Profiles(dir());
         loadProgress();
@@ -471,14 +471,11 @@ public class ReadActivity extends Activity {
 
     final java.util.Random rnd = new java.util.Random();
 
-    /** Успех: случайный игровой звук (Sounds), сразу за ним — случайный возглас из tts/cheer/*.ogg («すごーい！», «やったー！»…). */
+    /** Успех: случайный игровой звук (Sounds), конфетти и плашка «Молодец!». Возгласы голосом убраны (Фёдору не понравились, 04.11). */
     void celebrate() {
         int sr = 44100; short[] pcm = dev.gubenkov.reading.Sounds.randomSuccess(sr, rnd);
-        File[] cheer = new File(dir(), "tts/cheer").listFiles((x, n) -> n.endsWith(".ogg"));
-        Runnable then = null;
-        if (cheer != null && cheer.length > 0) { final File c = cheer[rnd.nextInt(cheer.length)]; then = () -> playFile(c); }
-        Log.i(TAG, "успех: звук " + pcm.length * 1000 / sr + " мс, возглас " + (cheer == null ? 0 : cheer.length) + " файлов");
-        playPcm(pcm, sr, then);
+        Log.i(TAG, "успех: звук " + pcm.length * 1000 / sr + " мс");
+        playPcm(pcm, sr, null);
         confetti.start(pal.confetti);
         badge.setVisibility(View.VISIBLE); badge.setAlpha(0f); badge.setScaleX(0.3f); badge.setScaleY(0.3f);
         badge.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(450).setInterpolator(new android.view.animation.OvershootInterpolator(2f))
