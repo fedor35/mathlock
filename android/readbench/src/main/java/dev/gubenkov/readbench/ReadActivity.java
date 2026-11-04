@@ -389,15 +389,39 @@ public class ReadActivity extends Activity {
         if (!AdaptiveLevel.stressMarks(textLevel))   // старшие уровни — как в книге, без ударений (акут — нулевой ширины, прячем цветом)
             for (int i = 0; i < cur.source.length(); i++)
                 if (cur.source.charAt(i) == ReadingText.ACUTE) sb.setSpan(new ForegroundColorSpan(Color.TRANSPARENT), i, i + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        int keepY = textView.getScrollY();
         textView.setText(sb);
-        // длинный текст прокручивается так, чтобы текущее слово было на второй строке видимой области
+        // длинный текст плавно едет за чтением: цель — текущее слово на второй видимой строке, со сдвигом внутри
+        // строки по доле пройденного (x слова / ширина), поэтому прокрутка непрерывная, а не скачками по строкам
         if (lastResult != null && lastResult.progressWords < cur.words.size() && textView.getLayout() != null) {
+            textView.scrollTo(0, keepY);   // setText не должен дёргать позицию
             android.text.Layout lay = textView.getLayout();
-            int line = lay.getLineForOffset(cur.words.get(lastResult.progressWords).start);
-            int y = Math.max(0, lay.getLineTop(Math.max(0, line - 1)));
+            int off = cur.words.get(lastResult.progressWords).start;
+            int line = lay.getLineForOffset(off);
+            float w = Math.max(1, lay.getLineRight(line) - lay.getLineLeft(line));
+            float frac = Math.max(0, Math.min(1, (lay.getPrimaryHorizontal(off) - lay.getLineLeft(line)) / w));
+            int lh = lay.getLineBottom(line) - lay.getLineTop(line);
+            int y = Math.max(0, lay.getLineTop(Math.max(0, line - 1)) + Math.round(frac * lh));
             int maxY = Math.max(0, lay.getHeight() + textView.getTotalPaddingTop() + textView.getTotalPaddingBottom() - textView.getHeight());
-            textView.scrollTo(0, Math.min(y, maxY));
-        } else if (lastResult == null) textView.scrollTo(0, 0);
+            smoothScroll(Math.min(y, maxY));
+        } else if (lastResult == null) { if (scrollAnim != null) scrollAnim.cancel(); textView.scrollTo(0, 0); }
+    }
+
+    android.animation.ValueAnimator scrollAnim;
+    int scrollTarget = -1;
+
+    /** Плавная прокрутка: длительность ~ интервалу обновления подсветки (0,4 с), чтобы движение было почти непрерывным. */
+    void smoothScroll(int y) {
+        if (y == scrollTarget && scrollAnim != null && scrollAnim.isRunning()) return;
+        if (scrollAnim != null) scrollAnim.cancel();
+        int from = textView.getScrollY();
+        scrollTarget = y;
+        if (Math.abs(y - from) < 2) { textView.scrollTo(0, y); return; }
+        scrollAnim = android.animation.ValueAnimator.ofInt(from, y);
+        scrollAnim.setDuration(Math.min(900, 450 + Math.abs(y - from) / 2));
+        scrollAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(1.2f));
+        scrollAnim.addUpdateListener(a -> textView.scrollTo(0, (int) a.getAnimatedValue()));
+        scrollAnim.start();
     }
 
     void readLoop() {
