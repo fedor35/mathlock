@@ -60,9 +60,14 @@ public final class StreamingRecognizer {
         float[][] all = new float[committed.size() + lastLive.length][];
         for (int i = 0; i < committed.size(); i++) all[i] = committed.get(i);
         System.arraycopy(lastLive, 0, all, committed.size(), lastLive.length);
-        letterFrames.clear();
+        letterFrames.clear(); lastAll = all;
         return model.greedy(all, all.length, letterFrames);
     }
+
+    private float[][] lastAll = new float[0][];
+
+    /** Лог-вероятности CTC по всей записи (кадры 40 мс) на момент последнего decode() — для StressClassifier. */
+    public float[][] logits() { return lastAll; }
 
     /** Кадр (40 мс от начала записи) каждой буквы последней гипотезы, без пробелов. */
     public final List<Integer> letterFrames = new ArrayList<>();

@@ -740,6 +740,7 @@ public class ReadActivity extends Activity {
     }
 
     Levels levels; boolean levelHintShown;
+    dev.gubenkov.reading.StressClassifier stress;
 
     /**
      * Громкость по кускам 100 мс: пол шума (10-й перцентиль, дБ), речь (90-й). Шумовой тест 05.11: телевизор при SNR 10 дБ
@@ -886,6 +887,25 @@ public class ReadActivity extends Activity {
             if (levels != null) j.put("levels", levels.toString());
             org.json.JSONArray lfa = new org.json.JSONArray(); for (int x : rec.letterFrames) lfa.put(x);
             j.put("letter_frames", lfa);   // время букв гипотезы — для разметки родителем и нарезки слов
+            // ударения по звуку (этап 4): ребёнку не показываются — копим для проверки на живой речи (ml/stress);
+            // в отдельном потоке и файле <rec>.stress.json, чтобы не задерживать журнал и награды
+            final float[][] lp = rec.logits(); final ReadingText txt = w.text; final File sf = new File(d, base + ".stress.json");
+            new Thread(() -> {
+                try {
+                    if (stress == null) stress = dev.gubenkov.reading.StressClassifier.fromResource();
+                    long t0 = System.nanoTime();
+                    List<dev.gubenkov.reading.StressClassifier.WordStress> ws = stress.analyze(txt, lp, lp.length, a, a.length);
+                    if (ws == null) return;
+                    org.json.JSONArray sa = new org.json.JSONArray(); int diff = 0;
+                    for (dev.gubenkov.reading.StressClassifier.WordStress x : ws) {
+                        if (x.expected < 0) continue;
+                        sa.put(new org.json.JSONArray().put(x.word).put(x.expected).put(x.predicted).put(Math.round(x.prob[x.predicted] * 100) / 100.0));
+                        if (x.predicted != x.expected) diff++;
+                    }
+                    try (FileOutputStream o = new FileOutputStream(sf)) { o.write(new JSONObject().put("words", sa).toString().getBytes(StandardCharsets.UTF_8)); }
+                    Log.i(TAG, String.format(java.util.Locale.ROOT, "ударения: %d слов, расходятся %d, %d мс", sa.length(), diff, (System.nanoTime() - t0) / 1000000));
+                } catch (Throwable e) { Log.w(TAG, "ударения: " + e); }
+            }, "stress").start();
             StringBuilder eh = new StringBuilder(); for (int q = 0; q < r.endingHint.length; q++) if (r.endingHint[q]) eh.append(eh.length() > 0 ? "," : "").append(q);
             if (eh.length() > 0) j.put("ending_hints", eh.toString());
             if (dec != null) {   // голос: эмбеддинг и косинусы — чтобы потом можно было пересортировать попытки
