@@ -626,6 +626,7 @@ public class ReadActivity extends Activity {
         // что читали — запоминаем: опознание голоса идёт после, а ребёнок к тому времени может нажать «дальше»
         final Read what = new Read(curId(), cur, textLevel, challenge);
         short[] s = new short[chunk]; float[] f = new float[chunk];
+        levels = new Levels(f); levelHintShown = false;
         runOnUiThread(() -> { status.setText(prev != null ? "Прочитай красные слова" : "Слушаю…"); setListening(true); render(); });
         if (ar != null) ar.startRecording();
         long lastDecode = 0; String hyp = ""; long decMs = 0; boolean done = false;
@@ -642,6 +643,11 @@ public class ReadActivity extends Activity {
                     for (int i = 0; i < r; i++) f[i] = s[i] / 32768f;
                 }
                 rec.feed(f, r);
+                levels.add(r);
+                if (!levelHintShown && levels.size() >= 40 && levels.size() % 4 == 0) {
+                    String hint = levels.hint();
+                    if (hint != null) { levelHintShown = true; Log.i(TAG, "уровни: " + levels + " → " + hint); runOnUiThread(() -> status.setText(hint)); }
+                }
                 long now = System.currentTimeMillis();
                 if (now - lastDecode >= 400 && rec.samples() > SR / 2) {
                     lastDecode = now;
@@ -726,6 +732,29 @@ public class ReadActivity extends Activity {
         badge.setVisibility(View.VISIBLE); badge.setAlpha(0f); badge.setScaleX(0.3f); badge.setScaleY(0.3f);
         badge.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(450).setInterpolator(new android.view.animation.OvershootInterpolator(2f))
                 .withEndAction(() -> badge.animate().alpha(0f).setStartDelay(1600).setDuration(500).withEndAction(() -> badge.setVisibility(View.GONE)));
+    }
+
+    Levels levels; boolean levelHintShown;
+
+    /**
+     * Громкость по кускам 100 мс: пол шума (10-й перцентиль, дБ), речь (90-й). Шумовой тест 05.11: телевизор при SNR 10 дБ
+     * меняет оценку у 29% слов живого детского чтения, а тихий дом — это 25–40 дБ. Подсказка — по последним 6 с.
+     */
+    static final class Levels {
+        final float[] buf; final java.util.ArrayList<Float> db = new java.util.ArrayList<>();
+        Levels(float[] buf) { this.buf = buf; }
+        void add(int n) { double e = 0; for (int i = 0; i < n; i++) e += buf[i] * buf[i]; db.add((float) (10 * Math.log10(e / Math.max(1, n) + 1e-12))); }
+        int size() { return db.size(); }
+        float pct(int from, float q) { java.util.List<Float> v = new java.util.ArrayList<>(db.subList(from, db.size())); java.util.Collections.sort(v); return v.get(Math.min(v.size() - 1, (int) (q * v.size()))); }
+        String hint() {
+            int from = Math.max(0, db.size() - 60); float floor = pct(from, 0.1f), speech = pct(from, 0.9f);
+            if (floor > -38f && speech - floor < 15f) return "Вокруг шумно — выключи телевизор или найди тихое место";
+            if (speech < -33f) return "Читай погромче или поднеси телефон ближе";
+            return null;
+        }
+        @Override public String toString() {
+            return db.isEmpty() ? "" : String.format(java.util.Locale.ROOT, "пол %.1f дБ, речь %.1f дБ", pct(0, 0.1f), pct(0, 0.9f));
+        }
     }
 
     TextView awardView;
@@ -849,6 +878,7 @@ public class ReadActivity extends Activity {
             if (duel) j.put("duel", true);
             StringBuilder st = new StringBuilder(); for (ReadingMatcher.State x : r.states) st.append(x.name().charAt(0));
             j.put("states", st.toString());
+            if (levels != null) j.put("levels", levels.toString());
             StringBuilder eh = new StringBuilder(); for (int q = 0; q < r.endingHint.length; q++) if (r.endingHint[q]) eh.append(eh.length() > 0 ? "," : "").append(q);
             if (eh.length() > 0) j.put("ending_hints", eh.toString());
             if (dec != null) {   // голос: эмбеддинг и косинусы — чтобы потом можно было пересортировать попытки
