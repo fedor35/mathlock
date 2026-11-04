@@ -51,8 +51,11 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         KeyguardManager km = getSystemService(KeyguardManager.class);
         if (km != null) km.requestDismissKeyguard(this, null);
         guard = getIntent().getBooleanExtra(EXTRA_GUARD, false);
-        if (!startReadingIfChosen()) { buildUi(); next(null); }
+        if (!startReadingIfChosen()) { buildUi(); next(readingHint); }
     }
+
+    /** Для проверки родителем: почему вместо чтения показаны примеры. */
+    private String readingHint;
 
     /** Чтение вместо примеров, если так решил родитель и всё для него есть (TaskPicker). */
     private boolean startReadingIfChosen() {
@@ -68,7 +71,11 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             int counter = prefs.mixedCounter();
             if (mode == TaskPicker.Mode.MIXED && forced == null) prefs.bumpMixedCounter();
             if (TaskPicker.pick(mode, guard, ready, counter) != TaskPicker.Kind.READING) {
-                if (!ready) android.util.Log.i(ReadingEngine.TAG, "чтение недоступно (микрофон " + mic + ", " + pack.missing(prefs.htpBroken()) + ") — примеры");
+                if (!ready) {
+                    String why = !mic ? "нет разрешения на микрофон" : pack.missing(prefs.htpBroken());
+                    android.util.Log.i(ReadingEngine.TAG, "чтение недоступно (" + why + ") — примеры");
+                    if (forced != null) readingHint = "Чтение недоступно: " + why;
+                }
                 return false;
             }
             reading = new ReadingScreen(this, this, prefs, pack);
