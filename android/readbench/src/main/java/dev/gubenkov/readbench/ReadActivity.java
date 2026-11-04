@@ -74,7 +74,9 @@ public class ReadActivity extends Activity {
     int[] lastLetterFrames;
     AudioTrack track;
     KidUi.Palette pal;
-    KidUi.IconButton mic, me, compare, listenBtn, nextBtn;
+    KidUi.IconButton mic, me, compare, listenBtn, nextBtn, trophy;
+    /** Раунд дуэли (DuelActivity): текст задан, после чтения — результат и возврат. */
+    boolean duel;
     KidUi.ConfettiView confetti;
     TextView levelView;
     // адаптивная сложность: журнал попыток чтеца files/progress-<id>.tsv, уровень выводится из него (AdaptiveLevel)
@@ -130,7 +132,7 @@ public class ReadActivity extends Activity {
         me.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, null));
         compare.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, this::listen));
         listenBtn.setOnClickListener(v -> listen());
-        nextBtn.setOnClickListener(v -> { recording = false; pickNext(); show(); });
+        nextBtn.setOnClickListener(v -> { recording = false; if (duel) finish(); else { pickNext(); show(); } });
 
         // главная кнопка: микрофон; во время чтения — красная, пульсирует, иконка «стоп»
         mic = new KidUi.IconButton(this, KidUi.Icon.MIC, pal.accent, Color.WHITE);
@@ -148,7 +150,16 @@ public class ReadActivity extends Activity {
         levelView.setPadding(0, 0, 0, dp(10));
         // скрытый вход для родителей: долгое нажатие на строку уровня
         levelView.setOnLongClickListener(v -> { startActivity(new android.content.Intent(this, ParentActivity.class)); return true; });
-        l.addView(levelView); l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row); l.addView(mic, mlp); l.addView(debug);
+        // строка уровня: по центру текст, справа небольшая кнопка-кубок — меню «Соревнования»
+        FrameLayout top = new FrameLayout(this);
+        top.addView(levelView, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+        trophy = new KidUi.IconButton(this, KidUi.Icon.TROPHY, pal.trophyChip, pal.trophyIcon);
+        FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.END | Gravity.CENTER_VERTICAL); tlp.bottomMargin = dp(10);
+        top.addView(trophy, tlp);
+        trophy.setOnClickListener(v -> startActivity(new android.content.Intent(this, CompeteActivity.class)));
+        duel = getIntent().getBooleanExtra("duel", false);
+        if (duel) trophy.setVisibility(View.GONE);
+        l.addView(top); l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row); l.addView(mic, mlp); l.addView(debug);
         root.addView(l, new FrameLayout.LayoutParams(-1, -1));
         confetti = new KidUi.ConfettiView(this); root.addView(confetti, new FrameLayout.LayoutParams(-1, -1));
 
@@ -166,7 +177,8 @@ public class ReadActivity extends Activity {
         profiles = new Profiles(dir());
         loadProgress();
         live = new LiveTts(this, LiveTts.RHVOICE);
-        if (getIntent().hasExtra("idx")) idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
+        if (getIntent().hasExtra("text_id")) { idx = Math.max(0, indexOf(getIntent().getStringExtra("text_id"))); }
+        else if (getIntent().hasExtra("idx")) idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
         else pickNext();
         show();
         new Thread(() -> {
@@ -236,6 +248,8 @@ public class ReadActivity extends Activity {
 
     String curId() { return texts.get(idx).optString("id"); }
 
+    int indexOf(String id) { for (int i = 0; i < texts.size(); i++) if (texts.get(i).optString("id").equals(id)) return i; return -1; }
+
     /** Общий журнал — только без голосовой модели (как было до профилей). */
     File progressFile() { return new File(dir(), "progress.tsv"); }
 
@@ -268,6 +282,7 @@ public class ReadActivity extends Activity {
 
     void showLevel() {
         int level = adapt.level(); float best = adapt.best(level);
+        if (duel) { levelView.setText("Дуэль · уровень " + textLevel); return; }
         String s = "Уровень " + level + (challenge ? " · ★ трудный текст" : "")
                 + (best > 0 ? String.format(java.util.Locale.ROOT, " · рекорд %.0f сл/мин", best) : "")
                 + String.format(java.util.Locale.ROOT, " · цель %.0f", level >= AdaptiveLevel.MAX ? AdaptiveLevel.TOP_TARGET : AdaptiveLevel.target(level));
@@ -298,7 +313,8 @@ public class ReadActivity extends Activity {
         Read(String id, ReadingText text, int level, boolean challenge) { this.id = id; this.text = text; this.level = level; this.challenge = challenge; }
     }
 
-    void record(Read w, ReadingStats st, SpeakerId.Decision d, String rec) {
+    /** @return опознанный чтец (null — не определён или без голосовой модели). */
+    SpeakerId.Profile record(Read w, ReadingStats st, SpeakerId.Decision d, String rec) {
         SpeakerId.Profile who = null;
         if (d != null && d.kind == SpeakerId.Kind.MATCH) who = d.profile;
         else if (d != null && d.kind == SpeakerId.Kind.NEW && st.counts()) who = profiles.create(lastEmb);
@@ -309,7 +325,7 @@ public class ReadActivity extends Activity {
         }
         if (!st.counts()) {
             Log.i(TAG, "попытка не засчитана (дочитано " + st.reached + "/" + st.words + "): " + st);
-            runOnUiThread(this::showLevel); return;
+            runOnUiThread(this::showLevel); return who;
         }
         AdaptiveLevel.Attempt a = new AdaptiveLevel.Attempt(System.currentTimeMillis(), w.id, w.level, st.wcpm(), st.accuracy(), w.challenge, rec);
         String msg = String.format(java.util.Locale.ROOT, "%.0f слов в минуту", st.wcpm());
@@ -332,6 +348,7 @@ public class ReadActivity extends Activity {
         }
         final String m = msg;
         runOnUiThread(() -> { status.setText(status.getText() + "\n" + m); showLevel(); });
+        return who;
     }
 
     String levelNews(ReadingStats st, int before, float best) {
@@ -515,7 +532,14 @@ public class ReadActivity extends Activity {
         // чей голос — уже после того, как ребёнок увидел результат; запись, журнал и уровень — по опознанному чтецу
         SpeakerId.Decision d = identify(audio, stats);
         String base = save(what, rec, h, fin, ok, d);
-        record(what, stats, d, base);
+        SpeakerId.Profile who = record(what, stats, d, base);
+        if (duel) {   // раунд дуэли: результат — в DuelActivity, экран закрывается сам (ребёнок успевает увидеть подсветку и конфетти)
+            android.content.Intent res = new android.content.Intent().putExtra("wcpm", stats.wcpm()).putExtra("accuracy", stats.accuracy())
+                    .putExtra("seconds", stats.seconds).putExtra("counts", stats.counts()).putExtra("rec", base);
+            if (who != null) res.putExtra("profile", who.id);
+            setResult(RESULT_OK, res);
+            textView.postDelayed(this::finish, ok ? 2600 : 1800);
+        }
     }
 
     final java.util.Random rnd = new java.util.Random();
@@ -552,6 +576,7 @@ public class ReadActivity extends Activity {
             try (FileOutputStream o = new FileOutputStream(new File(d, base + ".wav"))) { o.write(bb.array()); }
             JSONObject j = new JSONObject().put("id", w.id).put("text", w.text.source).put("hyp", hyp).put("auto_ok", ok)
                     .put("backend", String.valueOf(model.backend));
+            if (duel) j.put("duel", true);
             StringBuilder st = new StringBuilder(); for (ReadingMatcher.State x : r.states) st.append(x.name().charAt(0));
             j.put("states", st.toString());
             if (dec != null) {   // голос: эмбеддинг и косинусы — чтобы потом можно было пересортировать попытки
