@@ -59,3 +59,21 @@ print("\nКрасные, где Whisper слышит верно:")
 for e in ex_red: print("  ", *e)
 print("\nЗелёные, где Whisper слышит другое слово:")
 for e in ex_green: print("  ", *e)
+
+# --- разметка родителя (recordings/<rec>.labels.json, LabelActivity): правда для сверки ---
+lab = collections.Counter()
+for lf in sorted((D / "recordings").glob("*.labels.json")):
+    rec = lf.name[:-len(".labels.json")]
+    jf = D / "recordings" / f"{rec}.json"
+    if not jf.exists(): continue
+    truth = json.loads(lf.read_text())["labels"]; st = json.loads(jf.read_text())["states"]
+    for t, s in zip(truth, st):
+        if t == "P": continue
+        lab["слов"] += 1
+        if t == "O" and s == "W": lab["ложно красных"] += 1
+        if t == "W" and s == "O": lab["ложно зелёных"] += 1
+        if t == "W": lab["ошибок по разметке"] += 1
+if lab:
+    n = lab["слов"]; print(f"\nПо разметке родителя: слов {n}, ошибок {lab['ошибок по разметке']}, "
+                           f"ложно красных {lab['ложно красных']} ({100*lab['ложно красных']/n:.1f}%), "
+                           f"ложно зелёных {lab['ложно зелёных']} ({100*lab['ложно зелёных']/n:.1f}%)")
