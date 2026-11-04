@@ -17,7 +17,7 @@ import java.util.function.Consumer;
  * com.github.olga_yakovleva.rhvoice.android, русский голос скачивается в его приложении).
  * Ударения корпуса передаются знаком «+» перед ударной гласной. Это работает, только если в RHVoice
  * импортирован конфиг со строкой {@code stress_marker=+} (Настройки RHVoice → импорт файла конфигурации);
- * без него «+» ломает чтение. Голос Aleksandr-hq маркер игнорирует, Tatiana слушается (Фёдор на слух, 04.11).
+ * без него «+» ломает чтение. Маркер слушаются и Tatiana, и Aleksandr-hq (Фёдор на слух, 04.11); Tatiana звучит чище.
  */
 final class LiveTts {
     static final String TAG = "ReadBench";
@@ -76,7 +76,7 @@ final class LiveTts {
         return b.toString();
     }
 
-    /** Голос по умолчанию: слушается маркера ударения. */
+    /** Голос по умолчанию: качество звука лучше, чем у Aleksandr-hq (Фёдор на слух, 04.11). */
     static final String DEFAULT_VOICE = "Tatiana";
 
     /** Синтез в wav; {@code done} получает файл или null (вызывается в потоке TTS). */
