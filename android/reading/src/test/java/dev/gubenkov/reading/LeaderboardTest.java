@@ -45,8 +45,11 @@ public class LeaderboardTest {
 
     @Test public void dayBoundaryInTimeZone() {
         long midnightAlmaty = 1793732400000L;   // 04.11.2026 00:00 UTC+5
-        assertEquals(Leaderboard.day(midnightAlmaty, TZ), Leaderboard.day(midnightAlmaty - 1, TZ) + 1);
-        assertEquals(Leaderboard.day(midnightAlmaty, TZ), Leaderboard.day(NOON, TZ));
+        long four = midnightAlmaty + Leaderboard.DAY_START_MS;   // читательский день начинается в 4:00
+        assertEquals(Leaderboard.day(four, TZ), Leaderboard.day(four - 1, TZ) + 1);
+        assertEquals(Leaderboard.day(four, TZ), Leaderboard.day(NOON, TZ));
+        // 00:30 — ещё вчерашний вечер
+        assertEquals(Leaderboard.day(NOON, TZ) - 1, Leaderboard.day(midnightAlmaty + 1800000L, TZ));
     }
 
     @Test public void statsTodayStarsStreakBest() {

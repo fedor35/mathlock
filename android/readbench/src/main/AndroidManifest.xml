@@ -20,5 +20,6 @@
         <activity android:name=".CompeteActivity" android:exported="true" android:screenOrientation="portrait"/>
         <activity android:name=".DuelActivity" android:exported="true" android:screenOrientation="portrait"/>
         <activity android:name=".RecordsActivity" android:exported="true" android:screenOrientation="portrait"/>
+        <activity android:name=".AwardsActivity" android:exported="true" android:screenOrientation="portrait"/>
     </application>
 </manifest>

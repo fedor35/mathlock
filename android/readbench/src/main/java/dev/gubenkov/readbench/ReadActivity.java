@@ -39,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import dev.gubenkov.reading.Achievements;
 import dev.gubenkov.reading.AdaptiveLevel;
 import dev.gubenkov.reading.CtcModel;
 import dev.gubenkov.reading.ReadingStats;
@@ -169,6 +170,9 @@ public class ReadActivity extends Activity {
         levelView.setPadding(0, 0, 0, dp(10));
         // скрытый вход для родителей: долгое нажатие на строку уровня
         levelView.setOnLongClickListener(v -> { startActivity(new android.content.Intent(this, ParentActivity.class)); return true; });
+        // тап — «Мои награды» текущего чтеца
+        levelView.setOnClickListener(v -> { if (!duel) startActivity(new android.content.Intent(this, AwardsActivity.class)
+                .putExtra("profile", reader == null ? null : reader.id)); });
         // строка уровня: по центру текст, справа небольшая кнопка-кубок — меню «Соревнования»
         FrameLayout top = new FrameLayout(this);
         top.addView(levelView, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
@@ -310,10 +314,15 @@ public class ReadActivity extends Activity {
     void showLevel() {
         int level = adapt.level(); float best = adapt.best(level);
         if (duel) { levelView.setText("Дуэль · уровень " + textLevel); return; }
+        int awards = Achievements.count(Achievements.all(adapt, java.util.TimeZone.getDefault()));
         String s = "Уровень " + level + (challenge ? " · ★ трудный текст" : "")
-                + (best > 0 ? String.format(java.util.Locale.ROOT, " · рекорд %.0f сл/мин", best) : "")
-                + String.format(java.util.Locale.ROOT, " · цель %.0f", level >= AdaptiveLevel.MAX ? AdaptiveLevel.TOP_TARGET : AdaptiveLevel.target(level));
-        levelView.setText(s);
+                + (best > 0 ? String.format(java.util.Locale.ROOT, " · рекорд %.0f", best) : "")
+                + (awards > 0 ? " · 🏅 " + awards : "");
+        int left = adapt.toNextLevel();
+        String goal = level >= AdaptiveLevel.MAX
+                ? String.format(java.util.Locale.ROOT, "Цель — %.0f слов в минуту", AdaptiveLevel.TOP_TARGET)
+                : String.format(java.util.Locale.ROOT, "До уровня %d: ещё %d %s быстрее %.0f сл/мин", level + 1, left, left == 1 ? "текст" : "текста", AdaptiveLevel.target(level));
+        levelView.setText(s + "\n" + goal);
     }
 
     /**
@@ -374,7 +383,9 @@ public class ReadActivity extends Activity {
             if (d.kind == SpeakerId.Kind.NEW) { int n = profiles.resortUnknown(); if (n > 0) adapt = profiles.level(who); }
         }
         final String m = msg;
-        runOnUiThread(() -> { status.setText(status.getText() + "\n" + m); showLevel(); });
+        final List<Achievements.Badge> fresh = (spk == null || who != null) ? Achievements.newest(adapt, java.util.TimeZone.getDefault()) : new ArrayList<>();
+        if (!fresh.isEmpty()) Log.i(TAG, "новые награды: " + fresh);
+        runOnUiThread(() -> { status.setText(status.getText() + "\n" + m); showLevel(); if (!fresh.isEmpty()) showAwards(fresh, 0); });
         return who;
     }
 
@@ -704,6 +715,31 @@ public class ReadActivity extends Activity {
         badge.setVisibility(View.VISIBLE); badge.setAlpha(0f); badge.setScaleX(0.3f); badge.setScaleY(0.3f);
         badge.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(450).setInterpolator(new android.view.animation.OvershootInterpolator(2f))
                 .withEndAction(() -> badge.animate().alpha(0f).setStartDelay(1600).setDuration(500).withEndAction(() -> badge.setVisibility(View.GONE)));
+    }
+
+    TextView awardView;
+
+    /** Новые награды по одной: карточка сверху, звук монетки/уровня; после «Молодец!» (он в центре). */
+    void showAwards(List<Achievements.Badge> list, int i) {
+        if (i >= list.size() || isFinishing()) return;
+        Achievements.Badge b = list.get(i);
+        if (awardView == null) {
+            awardView = new TextView(this); awardView.setTextSize(22); awardView.setTextColor(pal.text); awardView.setGravity(Gravity.CENTER);
+            awardView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD)); awardView.setPadding(dp(26), dp(14), dp(26), dp(14));
+            GradientDrawable bd = new GradientDrawable(); bd.setColor(pal.card); bd.setStroke(dp(3), pal.gold); bd.setCornerRadius(dp(28));
+            awardView.setBackground(bd); awardView.setElevation(dp(10)); awardView.setVisibility(View.GONE);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2); lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL; lp.topMargin = dp(70);
+            ((FrameLayout) badge.getParent()).addView(awardView, lp);
+        }
+        textView.postDelayed(() -> {
+            if (isFinishing()) return;
+            awardView.setText("Новая награда!\n" + b.icon + " " + b.title);
+            KidUi.play(b.id.startsWith("level_") ? dev.gubenkov.reading.Sounds.levelUp(44100) : dev.gubenkov.reading.Sounds.coin(44100), 44100);
+            awardView.setVisibility(View.VISIBLE); awardView.setAlpha(0f); awardView.setTranslationY(-dp(40));
+            awardView.animate().alpha(1f).translationY(0).setStartDelay(0).setDuration(350).setInterpolator(new android.view.animation.OvershootInterpolator(1.5f))
+                    .withEndAction(() -> awardView.animate().alpha(0f).setStartDelay(1900).setDuration(400)
+                            .withEndAction(() -> { awardView.setVisibility(View.GONE); showAwards(list, i + 1); }));
+        }, i == 0 ? 1200 : 150);
     }
 
     /** @return false, если файл не играется. */

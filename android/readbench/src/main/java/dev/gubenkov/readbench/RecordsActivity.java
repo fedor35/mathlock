@@ -78,7 +78,9 @@ public class RecordsActivity extends Activity {
         TextView name = text(p.name, 24, true, pal.text); col.addView(name);
         StringBuilder sb = new StringBuilder(); for (int i = 0; i < Math.min(5, s.stars()); i++) sb.append("⭐");
         String stars = s.stars() > 5 ? "⭐ × " + s.stars() : sb.toString();
-        TextView today = text((stars.isEmpty() ? "сегодня ещё не читал" : stars) + (s.streak > 0 ? "   🔥 " + s.streak : ""), 20, false, pal.text);
+        int awards = dev.gubenkov.reading.Achievements.count(dev.gubenkov.reading.Achievements.all(profiles.level(p), TimeZone.getDefault()));
+        TextView today = text((stars.isEmpty() ? "сегодня ещё не читал" : stars) + (s.streak > 0 ? "   🔥 " + s.streak : "")
+                + (awards > 0 ? "   🏅 " + awards : ""), 20, false, pal.text);
         today.setPadding(0, dp(2), 0, dp(4)); col.addView(today);
         col.addView(text(String.format(Locale.ROOT, "Уровень %d · %s", level,
                 s.best > 0 ? String.format(Locale.ROOT, "лучший темп %.0f сл/мин", s.best) : "рекорда ещё нет"), 15, false, pal.status));
@@ -87,6 +89,7 @@ public class RecordsActivity extends Activity {
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(12);
         card.setLayoutParams(lp);
+        card.setOnClickListener(v -> startActivity(new android.content.Intent(this, AwardsActivity.class).putExtra("profile", p.id)));
         return card;
     }
 }
