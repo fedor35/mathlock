@@ -41,7 +41,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import dev.gubenkov.reading.AdaptiveLevel;
 import dev.gubenkov.reading.CtcModel;
+import dev.gubenkov.reading.ReadingStats;
 import dev.gubenkov.reading.ReadingMatcher;
 import dev.gubenkov.reading.ReadingText;
 import dev.gubenkov.reading.StreamingRecognizer;
@@ -72,6 +74,13 @@ public class ReadActivity extends Activity {
     KidUi.Palette pal;
     KidUi.IconButton mic, me, compare, listenBtn, nextBtn;
     KidUi.ConfettiView confetti;
+    TextView levelView;
+    // адаптивная сложность: журнал попыток files/progress.tsv, уровень выводится из него (AdaptiveLevel)
+    AdaptiveLevel adapt;
+    boolean challenge;
+    int textLevel = 1;
+    /** С какого уровня начинать без истории: сын читает целыми словами 30–50 слов/мин (04.11.2026). */
+    static final int START_LEVEL = 5;
 
     int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
@@ -94,6 +103,7 @@ public class ReadActivity extends Activity {
         textView.setBackground(card); textView.setElevation(dp(2));
         textView.setMovementMethod(LinkMovementMethod.getInstance());
         textView.setHighlightColor(Color.TRANSPARENT);
+        textView.setDefaultFocusHighlightEnabled(false);   // иначе фокус красит карточку серым прямоугольником
 
         status = new TextView(this); status.setTextSize(19); status.setGravity(Gravity.CENTER); status.setTextColor(pal.status);
         status.setPadding(0, dp(18), 0, dp(14));
@@ -113,7 +123,7 @@ public class ReadActivity extends Activity {
         me.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, null));
         compare.setOnClickListener(v -> playMine(0, lastAudio == null ? 0 : lastAudio.length, this::listen));
         listenBtn.setOnClickListener(v -> listen());
-        nextBtn.setOnClickListener(v -> { recording = false; idx = (idx + 1) % texts.size(); show(); });
+        nextBtn.setOnClickListener(v -> { recording = false; pickNext(); show(); });
 
         // главная кнопка: микрофон; во время чтения — красная, пульсирует, иконка «стоп»
         mic = new KidUi.IconButton(this, KidUi.Icon.MIC, pal.accent, Color.WHITE);
@@ -127,7 +137,9 @@ public class ReadActivity extends Activity {
         });
         mic.setOnLongClickListener(v -> { debug.setVisibility(debug.getVisibility() == View.GONE ? View.VISIBLE : View.GONE); return true; });
 
-        l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row); l.addView(mic, mlp); l.addView(debug);
+        levelView = new TextView(this); levelView.setTextSize(15); levelView.setTextColor(pal.status); levelView.setGravity(Gravity.CENTER);
+        levelView.setPadding(0, 0, 0, dp(10));
+        l.addView(levelView); l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1)); l.addView(status); l.addView(row); l.addView(mic, mlp); l.addView(debug);
         root.addView(l, new FrameLayout.LayoutParams(-1, -1));
         confetti = new KidUi.ConfettiView(this); root.addView(confetti, new FrameLayout.LayoutParams(-1, -1));
 
@@ -142,7 +154,9 @@ public class ReadActivity extends Activity {
         // папки создаёт само приложение: созданные через adb (владелец shell) оно не читает
         new File(dir(), "tts/cheer").mkdirs(); new File(dir(), "recordings").mkdirs();
         loadTexts();
-        idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
+        loadProgress();
+        if (getIntent().hasExtra("idx")) idx = getIntent().getIntExtra("idx", 0) % Math.max(1, texts.size());
+        else pickNext();
         show();
         new Thread(() -> { loadModel(); if (getIntent().hasExtra("wav")) readLoop(); }).start();
     }
@@ -183,8 +197,62 @@ public class ReadActivity extends Activity {
 
     String curId() { return texts.get(idx).optString("id"); }
 
+    File progressFile() { return new File(dir(), "progress.tsv"); }
+
+    void loadProgress() {
+        List<String> lines = new ArrayList<>();
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(progressFile()), StandardCharsets.UTF_8))) {
+            String line; while ((line = r.readLine()) != null) lines.add(line);
+        } catch (Exception ignored) {}
+        adapt = AdaptiveLevel.parse(START_LEVEL, lines);
+        Log.i(TAG, "прогресс: " + adapt.history.size() + " попыток, уровень " + adapt.level());
+    }
+
+    /** Следующий текст по адаптивному уровню; каждый 5-й — «вызов» на уровень выше. */
+    void pickNext() {
+        List<String> ids = new ArrayList<>(); List<Integer> lv = new ArrayList<>();
+        for (JSONObject t : texts) { ids.add(t.optString("id")); lv.add(t.optInt("level", 1)); }
+        int level = adapt.level();
+        challenge = adapt.nextIsChallenge();
+        int i = adapt.pick(ids, lv, challenge ? level + 1 : level, rnd);
+        if (challenge && i >= 0 && lv.get(i) != level + 1) challenge = false;   // старшего уровня ещё нет в корпусе
+        idx = i >= 0 ? i : (idx + 1) % texts.size();
+        Log.i(TAG, "уровень " + level + (challenge ? ", вызов" : "") + " → " + ids.get(idx));
+    }
+
+    void showLevel() {
+        int level = adapt.level(); float best = adapt.best(level);
+        String s = "Уровень " + level + (challenge ? " · ★ трудный текст" : "")
+                + (best > 0 ? String.format(java.util.Locale.ROOT, " · рекорд %.0f сл/мин", best) : "")
+                + String.format(java.util.Locale.ROOT, " · цель %.0f", level >= AdaptiveLevel.MAX ? AdaptiveLevel.TOP_TARGET : AdaptiveLevel.target(level));
+        levelView.setText(s);
+    }
+
+    void record(ReadingStats st) {
+        if (!st.counts()) { Log.i(TAG, "попытка не засчитана (дочитано " + st.reached + "/" + st.words + "): " + st); return; }
+        int before = adapt.level(); float best = adapt.best(textLevel);
+        AdaptiveLevel.Attempt a = new AdaptiveLevel.Attempt(System.currentTimeMillis(), curId(), textLevel, st.wcpm(), st.accuracy(), challenge);
+        adapt.history.add(a);
+        try (java.io.FileOutputStream o = new java.io.FileOutputStream(progressFile(), true)) {
+            o.write((a.toTsv() + "\n").getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) { Log.w(TAG, "progress.tsv: " + e); }
+        int after = adapt.level();
+        Log.i(TAG, "попытка: " + st + (challenge ? " (вызов)" : "") + ", уровень " + before + " → " + after);
+        String msg = String.format(java.util.Locale.ROOT, "%.0f слов в минуту", st.wcpm());
+        if (st.accuracy() >= 0.95f && st.wcpm() > best && best > 0) msg += " — новый рекорд!";
+        if (after > before) msg += "\nНовый уровень " + after + "!";
+        else if (after < before) msg += "\nПотренируемся на уровне " + after;
+        final String m = msg;
+        runOnUiThread(() -> { status.setText(status.getText() + "\n" + m); showLevel(); });
+    }
+
     void show() {
         cur = new ReadingText(texts.get(idx).optString("text"));
+        textLevel = texts.get(idx).optInt("level", 1);
+        showLevel();
+        // длинный текст — мельче шрифт, чтобы помещался в карточку
+        textView.setTextSize(cur.words.size() <= 10 ? 36 : cur.words.size() <= 45 ? 28 : cur.words.size() <= 90 ? 22 : 19);
+        textView.setGravity((cur.words.size() <= 45 ? Gravity.CENTER_VERTICAL : Gravity.TOP) | Gravity.START);
         lastResult = null; lastAudio = null; lastLetterFrames = null;
         me.setEnabled(false); compare.setEnabled(false);
         status.setText("Нажми на микрофон и читай вслух");
@@ -201,7 +269,7 @@ public class ReadActivity extends Activity {
                 int st = pos, left = syl.length();
                 while (pos < wd.end && left > 0) { char c = cur.source.charAt(pos); if (c != ReadingText.ACUTE && c != '-') left--; pos++; }
                 while (pos < wd.end && (cur.source.charAt(pos) == ReadingText.ACUTE)) pos++;
-                sb.setSpan(new ForegroundColorSpan(SYL[s++ % 2]), st, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                if (AdaptiveLevel.syllableColors(textLevel)) sb.setSpan(new ForegroundColorSpan(SYL[s++ % 2]), st, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 if (pos < wd.end && cur.source.charAt(pos) == '-') pos++;
             }
             {   // слово нажимается всегда: прочитанное — «ты → как надо», ещё не прочитанное — «как надо»
@@ -222,7 +290,18 @@ public class ReadActivity extends Activity {
                     sb.setSpan(new BackgroundColorSpan(pal.curBg), wd.start, wd.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
+        if (!AdaptiveLevel.stressMarks(textLevel))   // старшие уровни — как в книге, без ударений (акут — нулевой ширины, прячем цветом)
+            for (int i = 0; i < cur.source.length(); i++)
+                if (cur.source.charAt(i) == ReadingText.ACUTE) sb.setSpan(new ForegroundColorSpan(Color.TRANSPARENT), i, i + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         textView.setText(sb);
+        // длинный текст прокручивается так, чтобы текущее слово было на второй строке видимой области
+        if (lastResult != null && lastResult.progressWords < cur.words.size() && textView.getLayout() != null) {
+            android.text.Layout lay = textView.getLayout();
+            int line = lay.getLineForOffset(cur.words.get(lastResult.progressWords).start);
+            int y = Math.max(0, lay.getLineTop(Math.max(0, line - 1)));
+            int maxY = Math.max(0, lay.getHeight() + textView.getTotalPaddingTop() + textView.getTotalPaddingBottom() - textView.getHeight());
+            textView.scrollTo(0, Math.min(y, maxY));
+        } else if (lastResult == null) textView.scrollTo(0, 0);
     }
 
     void readLoop() {
@@ -242,7 +321,7 @@ public class ReadActivity extends Activity {
         runOnUiThread(() -> { status.setText("Слушаю…"); setListening(true); });
         if (ar != null) ar.startRecording();
         long lastDecode = 0; String hyp = ""; long decMs = 0; boolean done = false;
-        long maxSamples = SR * 120L;
+        long maxSamples = SR * Math.min(600L, Math.max(120L, cur.words.size() * 4L));   // до 15 слов/мин
         try {
             while (recording && rec.samples() < maxSamples) {
                 int r;
@@ -273,6 +352,9 @@ public class ReadActivity extends Activity {
         final boolean ok = fin.complete || done;
         final String h = hyp;
         save(rec, h, fin, ok);
+        int[] lfs = new int[rec.letterFrames.size()];
+        for (int i = 0; i < lfs.length; i++) lfs[i] = rec.letterFrames.get(i);
+        final ReadingStats stats = ReadingStats.of(fin, lfs, StreamingRecognizer.FRAME_SEC);
         final float[] audio = rec.audio();
         final int[] lf = new int[rec.letterFrames.size()];
         for (int i = 0; i < lf.length; i++) lf[i] = rec.letterFrames.get(i);
@@ -283,6 +365,7 @@ public class ReadActivity extends Activity {
             status.setText(ok ? "Молодец! Всё верно" : "Почти! Прочитай красные слова ещё раз");
             debug.setText(h);
             if (ok) celebrate();
+            record(stats);
         });
     }
 
