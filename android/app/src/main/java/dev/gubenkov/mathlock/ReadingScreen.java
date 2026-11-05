@@ -522,7 +522,7 @@ final class ReadingScreen {
             return;
         }
         int okWords = 0; for (ReadingMatcher.State x : fin.states) if (x == ReadingMatcher.State.OK) okWords++;
-        final boolean ok = TaskPicker.passed(okWords, fin.states.length, fin.complete || done, prefs.readThresholdPct());
+        final boolean ok = TaskPicker.passed(okWords, fin.states.length, fin.complete || done, prefs.readThresholdPct(), stats.reached);
         final int pct = Math.round(100f * okWords / Math.max(1, fin.states.length));
         final boolean allOk = fin.complete || done;
         if (ok) passed = true; else fails++;
@@ -536,7 +536,7 @@ final class ReadingScreen {
                 mic.setEnabled(false); listenBtn.setEnabled(false); mathBtn.setVisibility(View.INVISIBLE);
                 celebrate();
             } else {
-                status.setText("Почти! Прочитай красные слова ещё раз" + (hints > 0 ? "\nОранжевым — проверь окончания" : ""));
+                status.setText((prefs.readThresholdPct() == TaskPicker.READ_TO_END ? "Почти! Дочитай до конца" : "Почти! Прочитай красные слова ещё раз") + (hints > 0 ? "\nОранжевым — проверь окончания" : ""));
                 if (TaskPicker.offerMath(fails, SystemClock.elapsedRealtime() - shownAt)) showMathButton();
             }
         });

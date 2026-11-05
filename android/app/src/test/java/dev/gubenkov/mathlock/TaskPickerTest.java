@@ -74,4 +74,14 @@ public class TaskPickerTest {
         assertTrue(TaskPicker.offerMath(TaskPicker.FALLBACK_FAILS, 0));
         assertTrue(TaskPicker.offerMath(0, TaskPicker.FALLBACK_MS));
     }
+
+    @org.junit.Test public void readToEndIgnoresRedWords() {
+        assertTrue(TaskPicker.passed(6, 10, false, TaskPicker.READ_TO_END, 10));   // дочитал, 4 красных — засчитано
+        assertTrue(TaskPicker.passed(7, 10, false, TaskPicker.READ_TO_END, 9));    // последнее слово запнул
+        assertFalse(TaskPicker.passed(5, 10, false, TaskPicker.READ_TO_END, 6));   // бросил на середине
+        assertFalse(TaskPicker.passed(4, 10, false, TaskPicker.READ_TO_END, 10));  // меньше половины верно — болтовня
+        assertTrue(TaskPicker.passed(10, 10, true, TaskPicker.READ_TO_END, 10));
+        org.junit.Assert.assertEquals(0, TaskPicker.clampThreshold(0));
+        org.junit.Assert.assertEquals(50, TaskPicker.clampThreshold(10));
+    }
 }

@@ -201,7 +201,7 @@ public class MainActivity extends Activity {
         prefs.setGraceSeconds(Math.max(0, num(etGrace, 20)));
         prefs.setCheckIntervalMin(Math.max(0, num(etInterval, 30)));
         prefs.setCheckCount(Math.max(1, Math.min(20, num(etCheckCount, 1))));
-        prefs.setReadThresholdPct(TaskPicker.clampThreshold(num(etThreshold, 100)));
+        prefs.setReadThresholdPct(TaskPicker.clampThreshold(num(etThreshold, TaskPicker.READ_TO_END)));
         prefs.setReadStartLevel(Math.max(1, Math.min(9, num(etStartLevel, 5))));
         etThreshold.setText(String.valueOf(prefs.readThresholdPct())); etStartLevel.setText(String.valueOf(prefs.readStartLevel()));
         if (prefs.enabled()) LockService.start(this);
@@ -255,7 +255,7 @@ public class MainActivity extends Activity {
         btPrepare.setOnClickListener(v -> runReadingJob("Готовлю модель для NPU, не закрывайте экран…", () -> ReadingEngine.prepare(this), false));
         root.addView(btPrepare);
 
-        etThreshold = field("Точность для разблокировки чтением, % (100 = все слова верно, красные перечитать)", prefs.readThresholdPct(), root);
+        etThreshold = field("Точность для разблокировки чтением, % (100 = все слова верно, красные перечитать; 0 = достаточно дочитать до конца)", prefs.readThresholdPct(), root);
         etStartLevel = field("Стартовый уровень текстов для нового чтеца (1–9)", prefs.readStartLevel(), root);
         Button test = new Button(this);
         test.setText("Показать экран чтения сейчас");
