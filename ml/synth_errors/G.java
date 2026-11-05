@@ -2,6 +2,7 @@ import dev.gubenkov.reading.*; import java.nio.file.*; import java.util.*; impor
 /** Синтетические ошибки: по типам — доля слов, которые сверка сделала красными (обычно / strictEndings) и с подсказкой окончания.
  *  java G texts.jsonl jobs.jsonl hyps.jsonl [примеры.tsv] */
 public class G {
+  static final float TOL = Float.parseFloat(System.getProperty("tol", "0.25"));
   static class C { int n, red0, red1, hint; }
   public static void main(String[] a) throws Exception {
     Map<String,String> tx = new HashMap<>();
@@ -13,7 +14,7 @@ public class G {
       if (l.isBlank()) continue; JSONObject j = new JSONObject(l); String id = j.getString("id"); String h = hy.get(id); if (h == null) continue;
       ReadingText T = new ReadingText(tx.get(j.getString("text_id"))); String lab = j.getString("labels"); JSONArray kinds = j.getJSONArray("kinds");
       if (lab.length() != T.words.size()) { skipped++; continue; }
-      ReadingMatcher m0 = new ReadingMatcher(), m1 = new ReadingMatcher(); m1.strictEndings = true;
+      ReadingMatcher m0 = new ReadingMatcher(), m1 = new ReadingMatcher(); m1.strictEndings = true; m0.wordTolerance = m1.wordTolerance = TOL;
       ReadingMatcher.Result x = m0.match(T, h, true), y = m1.match(T, h, true);
       String hl = h.replace(" ", ""); String voice = j.getBoolean("child") ? "дет" : "взр";
       for (int w = 0; w < lab.length(); w++) {
@@ -36,6 +37,12 @@ public class G {
     System.out.println("тип        | слов  | красных | +подсказка | красных strict");
     for (Map.Entry<String,C> e : by.entrySet()) { C c = e.getValue();
       System.out.printf(Locale.ROOT, "%-10s | %5d | %6.1f%% | %9.1f%% | %6.1f%%%n", e.getKey(), c.n, 100.0*c.red0/c.n, 100.0*(c.red0+c.hint)/c.n, 100.0*c.red1/c.n); }
+    String cl = System.getProperty("clean");
+    if (cl != null) { int n = 0, r = 0; ReadingMatcher m = new ReadingMatcher(); m.wordTolerance = TOL;
+      for (String l : Files.readAllLines(Paths.get(cl))) { if (l.isBlank()) continue; JSONObject j = new JSONObject(l); String t = tx.get(j.getString("id")); if (t == null) continue;
+        ReadingText T = new ReadingText(t); ReadingMatcher.Result x = m.match(T, j.getString("hyp"), true);
+        for (ReadingMatcher.State s : x.states) { n++; if (s == ReadingMatcher.State.WRONG) r++; } }
+      System.out.printf(Locale.ROOT, "эталонная озвучка (всё верно): слов %d, красных %.2f%%%n", n, 100.0 * r / n); }
     if (skipped > 0) System.out.println("пропущено (не сошлось число слов): " + skipped);
     if (a.length > 3) Files.write(Paths.get(a[3]), ex);
   }
