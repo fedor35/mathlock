@@ -25,6 +25,8 @@ public final class TaskPicker {
     public static final long LOAD_TIMEOUT_MS = 30_000L;
     /** Порог точности: пределы, которые может задать родитель. */
     public static final int MIN_THRESHOLD = 50, MAX_THRESHOLD = 100;
+    /** Порог 0: засчитать, если текст дочитан до конца; красные слова перечитывать не нужно. */
+    public static final int READ_TO_END = 0;
 
     /**
      * @param guard экран родительского кода (защита Настроек) — всегда клавиатура
@@ -41,17 +43,23 @@ public final class TaskPicker {
      * Засчитано ли чтение для разблокировки.
      * @param ok верных слов (с учётом перечитывания красных), {@code words} — всего слов текста
      * @param complete ReadingMatcher: все слова верно
-     * @param thresholdPct порог родителя; 100 — только complete (как в readbench: красные перечитать)
+     * @param thresholdPct порог родителя; 100 — только complete (как в readbench: красные перечитать);
+     *        0 ({@link #READ_TO_END}) — достаточно дочитать до конца, красные не перечитывать
+     * @param reached до какого слова дочитал (ReadingStats.reached)
      */
-    public static boolean passed(int ok, int words, boolean complete, int thresholdPct) {
+    public static boolean passed(int ok, int words, boolean complete, int thresholdPct, int reached) {
         if (words <= 0) return false;
         if (complete) return true;
+        if (thresholdPct == READ_TO_END)   // дочитал (последнее слово можно запнуть) и не меньше половины верно — не болтовня
+            return reached >= words - 1 && ok * 2L >= words;
         int t = clampThreshold(thresholdPct);
         if (t >= MAX_THRESHOLD) return false;
         return ok * 100L >= (long) t * words;
     }
 
-    public static int clampThreshold(int pct) { return Math.max(MIN_THRESHOLD, Math.min(MAX_THRESHOLD, pct)); }
+    public static boolean passed(int ok, int words, boolean complete, int thresholdPct) { return passed(ok, words, complete, thresholdPct, 0); }
+
+    public static int clampThreshold(int pct) { return pct == READ_TO_END ? READ_TO_END : Math.max(MIN_THRESHOLD, Math.min(MAX_THRESHOLD, pct)); }
 
     /** Показать кнопку «Примеры» на экране чтения: несколько неудач подряд или долго не выходит. */
     public static boolean offerMath(int fails, long msOnScreen) {

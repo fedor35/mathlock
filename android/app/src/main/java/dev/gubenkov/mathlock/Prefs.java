@@ -61,7 +61,7 @@ public final class Prefs {
     public int taskMode() { return sp.getInt("task_mode", 0); }
     public void setTaskMode(int v) { sp.edit().putInt("task_mode", v).apply(); }
     /** Точность для разблокировки чтением, %: 100 — все слова верно (красные перечитать), меньше — хватит доли верных слов. */
-    public int readThresholdPct() { return sp.getInt("read_threshold", 100); }
+    public int readThresholdPct() { return sp.getInt("read_threshold", TaskPicker.READ_TO_END); }
     public void setReadThresholdPct(int v) { sp.edit().putInt("read_threshold", v).apply(); }
     /** Стартовый уровень текстов для нового чтеца (без истории). */
     public int readStartLevel() { return sp.getInt("read_start_level", 5); }
