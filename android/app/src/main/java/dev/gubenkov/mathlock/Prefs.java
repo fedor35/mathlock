@@ -76,6 +76,14 @@ public final class Prefs {
     public int volDayPct() { return sp.getInt("vol_day", 100); }
     public int volEveningPct() { return sp.getInt("vol_evening", 50); }
     public int volNightPct() { return sp.getInt("vol_night", 30); }
+    /** Периоды «с-до» в минутах суток: вечер 21:00–9:00, ночь 23:00–7:00 (ночь важнее вечера). */
+    public int eveFrom() { return sp.getInt("vol_eve_from", 21 * 60); }
+    public int eveTo() { return sp.getInt("vol_eve_to", 9 * 60); }
+    public int nightFrom() { return sp.getInt("vol_night_from", 23 * 60); }
+    public int nightTo() { return sp.getInt("vol_night_to", 7 * 60); }
+    public void setVolumeHours(int eveFrom, int eveTo, int nightFrom, int nightTo) {
+        sp.edit().putInt("vol_eve_from", eveFrom).putInt("vol_eve_to", eveTo).putInt("vol_night_from", nightFrom).putInt("vol_night_to", nightTo).apply();
+    }
     public void setVolumes(int day, int evening, int night) { sp.edit().putInt("vol_day", day).putInt("vol_evening", evening).putInt("vol_night", night).apply(); }
 
     public int readStartLevel() { return sp.getInt("read_start_level", 5); }
