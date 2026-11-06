@@ -86,8 +86,11 @@ final class ReadingScreen {
 
     // тёмная палитра экрана блокировки (как у примеров) + цвета подсветки стенда
     static final int BG = 0xFF1B2430, CARD = 0xFF26323F, TEXT = 0xFFF0EEE6, DIM = 0xFF9FB3C8, ACCENT = 0xFF5B8DEF,
-            LISTENING = 0xFFF0634A, CHIP = 0xFF2E3E55, SUCCESS = 0xFF3CAA64, SYL0 = 0xFF8FB4FF, SYL1 = 0xFFFF9B8A,
-            OK_BG = 0xFF244A2A, WRONG_BG = 0xFF5A2A2A, CUR_BG = 0xFF5A4A1A, ENDING = 0xFFFFA03C, HINT = 0xFFF2A65A;
+            LISTENING = 0xFFF0634A, CHIP = 0xFF2E3E55, SUCCESS = 0xFF3CAA64, HINT = 0xFFF2A65A;
+    // карточка текста — светлая «бумага» с тёмными буквами: на тёмной карточке сын и Фёдор плохо различали слова
+    // и подсветку (запись 07.11 00:17). Подсветка — светлые заливки, буквы поверх них остаются тёмными.
+    static final int PAPER = 0xFFFBF6E9, INK = 0xFF1D2430, SYL0 = 0xFF1C4FB8, SYL1 = 0xFFB8321F,
+            OK_BG = 0xFFC4EAC6, WRONG_BG = 0xFFF7B3AA, CUR_BG = 0xFFFFDD55, ENDING = 0xFFB85400;
 
     final Activity act;
     final Host host;
@@ -217,20 +220,20 @@ final class ReadingScreen {
 
     // ---------------- экран ----------------
 
+    FrameLayout leftBox, rightBox;
+
     void build() {
         FrameLayout fr = new FrameLayout(act); fr.setBackgroundColor(BG);
-        LinearLayout l = new LinearLayout(act); l.setOrientation(LinearLayout.VERTICAL);
-        l.setPadding(dp(18), dp(28), dp(18), dp(18));
 
         levelView = new TextView(act); levelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15); levelView.setTextColor(DIM);
         levelView.setGravity(Gravity.CENTER); levelView.setPadding(0, 0, 0, dp(10));
         // для родителя: долгое нажатие — экран примеров, где вводится родительский код
         levelView.setOnLongClickListener(v -> { close(); host.onReadingFallback(null); return true; });
 
-        textView = new TextView(act); textView.setLineSpacing(0, 1.3f); textView.setTextColor(TEXT);
+        textView = new TextView(act); textView.setLineSpacing(0, 1.3f); textView.setTextColor(INK);
         textView.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         textView.setPadding(dp(20), dp(20), dp(20), dp(20));
-        GradientDrawable card = new GradientDrawable(); card.setColor(CARD); card.setCornerRadius(dp(26));
+        GradientDrawable card = new GradientDrawable(); card.setColor(PAPER); card.setCornerRadius(dp(26));
         textView.setBackground(card);
         textView.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
         textView.setVerticalScrollBarEnabled(true);
@@ -243,7 +246,6 @@ final class ReadingScreen {
         status = new TextView(act); status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19); status.setGravity(Gravity.CENTER);
         status.setTextColor(DIM); status.setPadding(0, dp(14), 0, dp(10));
 
-        LinearLayout row = new LinearLayout(act); row.setGravity(Gravity.CENTER_VERTICAL);
         listenBtn = new RoundIcon(act, RoundIcon.SPEAKER, CHIP, TEXT);
         listenBtn.setOnClickListener(v -> toggleListen());
         mic = new RoundIcon(act, RoundIcon.MIC, ACCENT, Color.WHITE);
@@ -253,26 +255,62 @@ final class ReadingScreen {
         GradientDrawable mb = new GradientDrawable(); mb.setColor(CHIP); mb.setCornerRadius(dp(24)); mathBtn.setBackground(mb);
         mathBtn.setVisibility(View.INVISIBLE);
         mathBtn.setOnClickListener(v -> { close(); host.onReadingFallback(null); });
-        LinearLayout.LayoutParams side = new LinearLayout.LayoutParams(0, dp(64), 1);
-        FrameLayout left = new FrameLayout(act), right = new FrameLayout(act);
-        left.addView(listenBtn, new FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER));
-        right.addView(mathBtn, new FrameLayout.LayoutParams(dp(110), dp(48), Gravity.CENTER));
-        row.addView(left, side);
-        row.addView(mic, new LinearLayout.LayoutParams(dp(140), dp(140)));
-        row.addView(right, new LinearLayout.LayoutParams(0, dp(64), 1));
-
-        l.addView(levelView);
-        l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1));
-        l.addView(status);
-        l.addView(row, new LinearLayout.LayoutParams(-1, -2));
-        fr.addView(l, new FrameLayout.LayoutParams(-1, -1));
+        leftBox = new FrameLayout(act); rightBox = new FrameLayout(act);
+        root = fr;
+        arrange();
 
         badge = new TextView(act); badge.setText("Молодец!"); badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 42); badge.setTextColor(Color.WHITE);
         badge.setTypeface(Typeface.DEFAULT_BOLD); badge.setPadding(dp(34), dp(16), dp(34), dp(16));
         GradientDrawable bd = new GradientDrawable(); bd.setColor(SUCCESS); bd.setCornerRadius(dp(40)); badge.setBackground(bd);
         badge.setElevation(dp(8)); badge.setVisibility(View.GONE);
         fr.addView(badge, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        root = fr;
+    }
+
+    static void detach(View v) { if (v.getParent() instanceof android.view.ViewGroup) ((android.view.ViewGroup) v.getParent()).removeView(v); }
+
+    /**
+     * Раскладка под ориентацию. Портрет: уровень, текст, подсказка, кнопки снизу. Альбом: текст на всю высоту слева,
+     * кнопки колонкой справа — раньше текст в альбоме сжимался в узкую полоску над кнопкой 140 dp.
+     * Зовётся и при повороте (QuizActivity.onConfigurationChanged) — запись при этом не прерывается.
+     */
+    void arrange() {
+        FrameLayout fr = (FrameLayout) root;
+        for (View v : new View[]{levelView, textView, status, mic, listenBtn, mathBtn, leftBox, rightBox}) detach(v);
+        if (fr.getChildCount() > 0 && fr.getChildAt(0) != badge) fr.removeViewAt(0);
+        leftBox.addView(listenBtn, new FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER));
+        rightBox.addView(mathBtn, new FrameLayout.LayoutParams(dp(110), dp(48), Gravity.CENTER));
+        boolean land = act.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        LinearLayout l = new LinearLayout(act);
+        if (!land) {
+            l.setOrientation(LinearLayout.VERTICAL);
+            l.setPadding(dp(18), dp(28), dp(18), dp(18));
+            status.setPadding(0, dp(14), 0, dp(10));
+            LinearLayout row = new LinearLayout(act); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.addView(leftBox, new LinearLayout.LayoutParams(0, dp(64), 1));
+            row.addView(mic, new LinearLayout.LayoutParams(dp(140), dp(140)));
+            row.addView(rightBox, new LinearLayout.LayoutParams(0, dp(64), 1));
+            l.addView(levelView);
+            l.addView(textView, new LinearLayout.LayoutParams(-1, 0, 1));
+            l.addView(status);
+            l.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        } else {
+            l.setOrientation(LinearLayout.HORIZONTAL);
+            l.setPadding(dp(16), dp(12), dp(16), dp(12));
+            status.setPadding(0, dp(6), 0, dp(6));
+            LinearLayout col = new LinearLayout(act); col.setOrientation(LinearLayout.VERTICAL); col.setGravity(Gravity.CENTER_HORIZONTAL);
+            col.setPadding(dp(14), 0, 0, 0);
+            col.addView(levelView, new LinearLayout.LayoutParams(-1, -2));
+            col.addView(status, new LinearLayout.LayoutParams(-1, 0, 1));
+            col.addView(mic, new LinearLayout.LayoutParams(dp(110), dp(110)));
+            LinearLayout row = new LinearLayout(act); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.addView(leftBox, new LinearLayout.LayoutParams(0, dp(64), 1));
+            row.addView(rightBox, new LinearLayout.LayoutParams(0, dp(64), 1));
+            col.addView(row, new LinearLayout.LayoutParams(-1, -2));
+            l.addView(textView, new LinearLayout.LayoutParams(0, -1, 1));
+            l.addView(col, new LinearLayout.LayoutParams(dp(250), -1));
+        }
+        fr.addView(l, 0, new FrameLayout.LayoutParams(-1, -1));
+        if (cur != null) h.post(this::render);   // телесуфлёр — под новую ширину строк
     }
 
     void showMathButton() { if (mathBtn != null) mathBtn.setVisibility(View.VISIBLE); }
