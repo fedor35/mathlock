@@ -118,7 +118,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     @Override public void onConfigurationChanged(android.content.res.Configuration c) {
         super.onConfigurationChanged(c);
-        if (reading != null) return;   // экран чтения сам подстраивается под размер
+        if (reading != null) { reading.arrange(); return; }   // экран чтения: альбом — текст слева, кнопки справа
         buildUi();
         tvProblem.setText(guard ? "Родительский код" : cur.toString());
         tvInput.setText(input);
