@@ -85,6 +85,9 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
                 return false;
             }
             reading = new ReadingScreen(this, this, prefs, pack);
+            if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                reading.debugWav = getIntent().getStringExtra("wav"); reading.debugTextId = getIntent().getStringExtra("text_id");
+            }
             if (!reading.start()) { stopReading(); return false; }
             setContentView(reading.view());
             return true;
