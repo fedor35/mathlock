@@ -103,6 +103,7 @@ public class LockService extends Service {
         running = true;
         MediaHush.recover(this);
         AdbKeeper.start(this);
+        VolumeGuard.start(this);
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CH, "Блокировка", NotificationManager.IMPORTANCE_MIN));
         PendingIntent pi = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);

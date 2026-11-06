@@ -72,6 +72,12 @@ public final class Prefs {
     public void setFreeUntil(long t) { sp.edit().putLong("free_until", t).commit(); }
     public long freeLeftMs() { return Math.max(0, freeUntil() - System.currentTimeMillis()); }
 
+    /** Потолок громкости медиа, %: днём, вечером (21–9), ночью (23–7). 100 = без ограничения. */
+    public int volDayPct() { return sp.getInt("vol_day", 100); }
+    public int volEveningPct() { return sp.getInt("vol_evening", 50); }
+    public int volNightPct() { return sp.getInt("vol_night", 30); }
+    public void setVolumes(int day, int evening, int night) { sp.edit().putInt("vol_day", day).putInt("vol_evening", evening).putInt("vol_night", night).apply(); }
+
     public int readStartLevel() { return sp.getInt("read_start_level", 5); }
     public void setReadStartLevel(int v) { sp.edit().putInt("read_start_level", v).apply(); }
     /** Счётчик сеансов «вперемешку»: чётный — чтение, нечётный — примеры. */
