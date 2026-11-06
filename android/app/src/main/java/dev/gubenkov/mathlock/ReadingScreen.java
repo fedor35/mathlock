@@ -123,6 +123,12 @@ final class ReadingScreen {
     /** В этой записи была подсказка «шумно». */
     volatile boolean noisy;
     volatile long recStartedAt;
+    /** Красное слово, на котором стоит чтение (−1 — нет): без жёлтого «текущего», суфлёр — к нему. */
+    volatile int stopWord = -1;
+    /** Сколько слов дальше красного прочитать, чтобы оно отпустилось. */
+    static final int RELEASE_WORDS = 6;
+    /** Только отладочная сборка: запись вместо микрофона (в реальном темпе) и текст по id — проверка на живых записях. */
+    String debugWav, debugTextId;
     int fails;
     boolean engineHeld;
     MediaPlayer player;
@@ -213,6 +219,7 @@ final class ReadingScreen {
         int i = adapt.pick(ids, lv, challenge ? level + 1 : level, rnd);
         if (challenge && i >= 0 && lv.get(i) != level + 1) challenge = false;
         idx = i >= 0 ? i : rnd.nextInt(texts.size());
+        if (debugTextId != null) for (int k = 0; k < texts.size(); k++) if (debugTextId.equals(texts.get(k).optString("id"))) idx = k;
         Log.i(TAG, "уровень " + level + (challenge ? ", вызов" : "") + " → " + ids.get(idx));
     }
 
@@ -371,7 +378,7 @@ final class ReadingScreen {
         }
         ReadingMatcher.Result res = lastResult;
         int cw = -1;   // текущее (жёлтое) слово — первое ещё не засчитанное
-        if (res != null && recording)
+        if (res != null && recording && stopWord < 0)
             for (int w = 0; w < cur.words.size(); w++) if (res.states[w] == ReadingMatcher.State.PENDING) { cw = w; break; }
         for (int w = 0; w < cur.words.size(); w++) {
             int st = 0;   // 0 — без фона, 1 — верно, 2 — ошибка, 3 — текущее, 4 — верно, но проверь окончание
@@ -400,7 +407,8 @@ final class ReadingScreen {
         // телесуфлёр: во время чтения — текущее слово на трети карточки; после и при перечитывании — первое красное
         int tw = -1;
         if (res != null) {
-            if (recording && !repairing && cw >= 0) tw = cw;
+            if (recording && stopWord >= 0) tw = stopWord;
+            else if (recording && !repairing && cw >= 0) tw = cw;
             else for (int w = 0; w < cur.words.size(); w++) if (res.states[w] != ReadingMatcher.State.OK) { tw = w; break; }
         }
         android.text.Layout lay = textView.getLayout();
@@ -496,7 +504,12 @@ final class ReadingScreen {
         final String textId = curId(); final int level = textLevel; final boolean chall = challenge;
         int chunk = SR / 10;
         AudioRecord ar = null;
-        try {
+        java.io.InputStream wavIn = null;
+        if (debugWav != null) {
+            try { wavIn = new java.io.BufferedInputStream(new FileInputStream(debugWav)); wavIn.skip(44); }
+            catch (Exception e) { Log.e(TAG, "wav " + debugWav, e); recording = false; return; }
+        }
+        if (wavIn == null) try {
             ar = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SR, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, SR * 2);
             if (ar.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("AudioRecord не инициализирован");
             MediaHush.mute(act);   // игры фокус не слушают — глушим медиа на время записи
@@ -515,11 +528,17 @@ final class ReadingScreen {
         final Levels levels = new Levels(f); noisy = false; boolean hintShown = false;
         h.post(() -> { status.setText(prev != null ? "Прочитай красные слова" : "Слушаю…"); setListening(true); render(); });
         String hyp = ""; boolean done = false; long lastDecode = 0;
+        // «Красное — сразу перечитать»: после первого красного слова зелёное не показываем, пока его не перечитали
+        // верно (сверка по всей записи засчитывает повтор слова, см. ReadingMatcher). Прочитал дальше ещё
+        // RELEASE_WORDS слов, не исправив, — слово отпускаем (остаётся красным), чтобы не застрять на слове,
+        // которое не берёт распознавание.
+        final boolean[] released = new boolean[text.words.size()];
+        stopWord = -1;
         int lastLen = 0; long lastChange = System.currentTimeMillis();
         long maxSamples = SR * Math.min(600L, Math.max(120L, text.words.size() * 4L));   // до 15 слов/мин
         try {
             while (recording && !closed && rec.samples() < maxSamples) {
-                int r = ar.read(s, 0, chunk); if (r <= 0) break;
+                int r = wavIn != null ? readWav(wavIn, s, chunk) : ar.read(s, 0, chunk); if (r <= 0) break;
                 for (int i = 0; i < r; i++) f[i] = s[i] / 32768f;
                 rec.feed(f, r);
                 levels.add(r);
@@ -531,7 +550,17 @@ final class ReadingScreen {
                 if (now - lastDecode >= 400 && rec.samples() > SR / 2) {
                     lastDecode = now;
                     hyp = rec.decode();
-                    ReadingMatcher.Result res = matcher.match(text, hyp, false, prev);
+                    ReadingMatcher.Result raw = matcher.match(text, hyp, false, prev);
+                    int fw = ReadingMatcher.firstWrong(raw, released); boolean rel = false;
+                    if (fw >= 0 && raw.progressWords > fw + 1 + RELEASE_WORDS) {
+                        released[fw] = true; rel = true;
+                        h.post(() -> { status.setTextColor(DIM); status.setText("Ладно, читай дальше"); });
+                    }
+                    final ReadingMatcher.Result res = ReadingMatcher.gate(raw, released);
+                    int sw = ReadingMatcher.firstWrong(res, released);
+                    if (sw >= 0 && stopWord < 0) h.post(() -> { status.setTextColor(HINT); status.setText("Стоп! Прочитай красное слово ещё раз"); });
+                    if (sw < 0 && stopWord >= 0 && !rel) h.post(() -> { status.setTextColor(DIM); status.setText("Верно! Читай дальше"); });
+                    stopWord = sw;
                     int len = hyp.replace(" ", "").length();
                     if (len != lastLen) { lastLen = len; lastChange = now; }
                     h.post(() -> { if (!closed) { lastResult = res; render(); } });
@@ -542,8 +571,8 @@ final class ReadingScreen {
                 }
             }
         } catch (Throwable e) { Log.e(TAG, "чтение", e); }
-        try { ar.stop(); } catch (Exception ignored) { }
-        ar.release();
+        if (ar != null) { try { ar.stop(); } catch (Exception ignored) { } ar.release(); }
+        if (wavIn != null) try { wavIn.close(); } catch (Exception ignored) { }
         MediaHush.unmute(act);   // до праздничного звука и «послушать»
         recording = false;
         if (closed) return;
@@ -553,11 +582,15 @@ final class ReadingScreen {
             return;
         }
         try { hyp = rec.decode(); } catch (Throwable ignored) { }
-        final ReadingMatcher.Result fin = matcher.match(text, hyp, true, prev);
-        final ReadingMatcher.Result live = matcher.match(text, hyp, false, prev);
+        stopWord = -1;
+        final ReadingMatcher.Result fin = ReadingMatcher.gate(matcher.match(text, hyp, true, prev), released);
+        final ReadingMatcher.Result live = ReadingMatcher.gate(matcher.match(text, hyp, false, prev), released);
         int[] lfs = new int[rec.letterFrames.size()];
         for (int i = 0; i < lfs.length; i++) lfs[i] = rec.letterFrames.get(i);
-        final ReadingStats stats = ReadingStats.of(fin, live, lfs, StreamingRecognizer.FRAME_SEC);
+        // слова и точность — с остановкой на красном; время чтения — по всей записи
+        ReadingStats byWords = ReadingStats.of(fin, live, null, StreamingRecognizer.FRAME_SEC);
+        ReadingStats byTime = ReadingStats.of(matcher.match(text, hyp, true, prev), lfs, StreamingRecognizer.FRAME_SEC);
+        final ReadingStats stats = new ReadingStats(byWords.words, byWords.ok, byWords.wrong, byWords.reached, byTime.seconds);
         // пустое нажатие или разговор мимо текста — тихо забываем, экран как был
         boolean junk = hyp.replace(" ", "").length() < 3 || (prev == null && live.progressWords == 0);
         if (junk && !done) {
@@ -598,6 +631,18 @@ final class ReadingScreen {
             showLevel();
             if (ok) h.postDelayed(() -> { if (!closed) host.onReadingPassed(); }, n.contains("🏅") ? 3800 : 2400);
         });
+    }
+
+    /** Отладка: кусок PCM16 из файла в темпе живой речи. */
+    static int readWav(java.io.InputStream in, short[] s, int chunk) {
+        try {
+            byte[] b = new byte[chunk * 2]; int got = 0;
+            while (got < b.length) { int r = in.read(b, got, b.length - got); if (r < 0) break; got += r; }
+            int n = got / 2;
+            for (int i = 0; i < n; i++) s[i] = (short) ((b[2 * i] & 0xff) | (b[2 * i + 1] << 8));
+            Thread.sleep(1000L * n / SR);
+            return n;
+        } catch (Exception e) { return -1; }
     }
 
     SpeakerId.Decision identify(float[] audio) {

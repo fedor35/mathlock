@@ -199,6 +199,28 @@ public final class ReadingMatcher {
         return best;
     }
 
+    // ---------- «Красное — сразу перечитать» (Фёдор, 07.11) ----------
+    // Раньше ошибка краснела, когда ребёнок уже читал дальше, а следующие слова зеленели — непонятно,
+    // перечитывать сейчас или после текста. Теперь: после первого красного слова зелёное не показывается,
+    // пока его не перечитали (повтор засчитывает laterReading) или пока его не отпустили (см. ReadingScreen).
+
+    /** Первое красное слово, на котором стоим (не отпущенное), или -1. */
+    public static int firstWrong(Result r, boolean[] released) {
+        for (int w = 0; w < r.states.length; w++)
+            if (r.states[w] == State.WRONG && (released == null || !released[w])) return w;
+        return -1;
+    }
+
+    /** Слова после первого неотпущенного красного — снова «не прочитаны». */
+    public static Result gate(Result r, boolean[] released) {
+        int f = firstWrong(r, released);
+        if (f < 0) return r;
+        State[] st = r.states.clone(); boolean[] eh = r.endingHint.clone();
+        int[] hf = r.hypFirst.clone(), hl = r.hypLast.clone();
+        for (int w = f + 1; w < st.length; w++) { st[w] = State.PENDING; eh[w] = false; hf[w] = hl[w] = -1; }
+        return new Result(st, r.wordCost, Math.min(r.progressWords, f + 1), false, hf, hl, eh);
+    }
+
     /** Буква окончания: гласная, «й» или «м»/«х»/«в» (-ом, -ых, -ов) — согласные внутри основы так не считаем. */
     static boolean endingLetter(LanguageSpec L, char c) { return L.isVowel(c) || c == 'й' || c == 'м' || c == 'х' || c == 'в'; }
     static boolean isLast(int[] wordOf, int n, int k) { return k + 1 == n || wordOf[k + 1] != wordOf[k]; }

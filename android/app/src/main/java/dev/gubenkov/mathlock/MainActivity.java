@@ -35,6 +35,12 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = new Prefs(this);
+        // отладочная сборка: am start … MainActivity --es wav <файл> --es text_id <id> — экран чтения с записью вместо микрофона
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 && getIntent().hasExtra("wav")) {
+            startActivity(new Intent(this, QuizActivity.class).putExtra(QuizActivity.EXTRA_TASK, "reading")
+                    .putExtra("wav", getIntent().getStringExtra("wav")).putExtra("text_id", getIntent().getStringExtra("text_id")));
+            finish(); return;
+        }
         ScrollView sv = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
