@@ -14,6 +14,7 @@ import android.view.View;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.GridLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -24,7 +25,7 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
     private Prefs prefs;
     private LinearLayout perms;
-    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus, etVolDay, etVolEve, etVolNight, etEveHours, etNightHours;
+    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus, etVolDay, etVolEve, etVolNight, etEveHours, etNightHours, etBonusPer, etBankMax;
     private TextView tvStat, tvReading;
     private Button btInstallApk, btPrepare;
     /** Идёт установка пакета или подготовка модели (минуты) — вторую не запускаем. */
@@ -65,12 +66,19 @@ public class MainActivity extends Activity {
         etGrace = field("Не спрашивать, если экран гас меньше (сек)", prefs.graceSeconds(), root);
         root.addView(label("Контрольные примеры во время игры"));
         etInterval = field("Каждые N минут работы экрана (0 = выключить)", prefs.checkIntervalMin(), root);
-        etEveHours = textField("Вечер: часы «с-до» (например 21-9 или 21:30-8:30)", VolumeGuard.fmtRange(prefs.eveFrom(), prefs.eveTo()), root);
-        etVolEve = field("Громкость видео и игр вечером, не выше % (50 = ползунок на середине)", prefs.volEveningPct(), root);
-        etNightHours = textField("Ночь: часы «с-до» (ночь важнее вечера; одинаковые часы — выключить)", VolumeGuard.fmtRange(prefs.nightFrom(), prefs.nightTo()), root);
-        etVolNight = field("Громкость ночью, не выше %", prefs.volNightPct(), root);
-        etVolDay = field("Громкость в остальное время, не выше % (100 = без ограничения)", prefs.volDayPct(), root);
         etCheckCount = field("Примеров в контрольной проверке", prefs.checkCount(), root);
+        etBonusPer = field("После разблокировки можно решать ещё: + минут к следующей проверке за пример (0 = выключить)", prefs.bonusPerExampleMin(), root);
+        etBankMax = field("Запас минут — не больше", prefs.bankMaxMin(), root);
+        Button grid = new Button(this);
+        grid.setText("Как выучена таблица");
+        grid.setOnClickListener(v -> showFactGrid());
+        root.addView(grid);
+        root.addView(label("Громкость видео и игр"));
+        etEveHours = textField("Вечер: часы «с-до» (например 21-9 или 21:30-8:30)", VolumeGuard.fmtRange(prefs.eveFrom(), prefs.eveTo()), root);
+        etVolEve = field("Вечером, не выше % (50 = ползунок на середине)", prefs.volEveningPct(), root);
+        etNightHours = textField("Ночь: часы «с-до» (ночь важнее вечера; одинаковые часы — выключить)", VolumeGuard.fmtRange(prefs.nightFrom(), prefs.nightTo()), root);
+        etVolNight = field("Ночью, не выше %", prefs.volNightPct(), root);
+        etVolDay = field("В остальное время, не выше % (100 = без ограничения)", prefs.volDayPct(), root);
         buildReadingSection(root);
         root.addView(label("Родительский код (цифры; ввод вместо ответа снимает блокировку)"));
         etCode = new EditText(this);
@@ -194,6 +202,34 @@ public class MainActivity extends Activity {
         return e;
     }
 
+    /** Таблица 2…9 × 2…9: цвет — как выучен пример (красный — путает, жёлтый — считает долго, зелёный — наизусть). */
+    private void showFactGrid() {
+        FactStats fs = new FactStats(new java.io.File(getFilesDir(), "facts.tsv"));
+        GridLayout g = new GridLayout(this); g.setColumnCount(9); g.setPadding(dp(8), dp(8), dp(8), dp(8));
+        for (int r = 1; r <= 9; r++) for (int c = 1; c <= 9; c++) {
+            TextView t = new TextView(this); t.setGravity(android.view.Gravity.CENTER); t.setTextSize(13);
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(); lp.width = dp(34); lp.height = dp(34); lp.setMargins(1, 1, 1, 1);
+            t.setLayoutParams(lp);
+            if (r == 1 && c == 1) t.setText("×");
+            else if (r == 1) t.setText(String.valueOf(c));
+            else if (c == 1) t.setText(String.valueOf(r));
+            else {
+                FactStats.Fact f = fs.get(r, c);
+                t.setText(String.valueOf(r * c));
+                int col = f == null ? 0xFFE0E0E0 : f.box == 0 ? 0xFFF4A39A : f.box <= 2 ? 0xFFFFE08A : f.box <= 3 ? 0xFFCDEBB0 : 0xFF8FD19E;
+                t.setBackgroundColor(col);
+            }
+            g.addView(t);
+        }
+        TextView legend = new TextView(this);
+        legend.setText("Серый — ещё не было, красный — ошибся в последний раз, жёлтый — верно, но долго (больше 5 с) или мало раз, зелёный — быстро и много раз подряд. Трудные примеры выпадают чаще.");
+        legend.setPadding(dp(12), dp(8), dp(12), 0);
+        LinearLayout box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL);
+        box.addView(g); box.addView(legend);
+        android.widget.ScrollView sv = new android.widget.ScrollView(this); sv.addView(box);
+        new android.app.AlertDialog.Builder(this).setTitle("Как выучена таблица").setView(sv).setPositiveButton("OK", null).show();
+    }
+
     private EditText textField(String name, String val, LinearLayout root) {
         EditText e = field(name, 0, root);
         e.setInputType(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_TIME);
@@ -212,6 +248,7 @@ public class MainActivity extends Activity {
         prefs.setNeedCorrect(Math.max(1, Math.min(20, num(etNeed, 3))));
         prefs.setGraceSeconds(Math.max(0, num(etGrace, 20)));
         prefs.setCheckIntervalMin(Math.max(0, num(etInterval, 30)));
+        prefs.setBonus(Math.max(0, Math.min(30, num(etBonusPer, 5))), Math.max(0, Math.min(240, num(etBankMax, 30))));
         prefs.setVolumes(pct(etVolDay, 100), pct(etVolEve, 50), pct(etVolNight, 30));
         int[] eve = VolumeGuard.parseRange(etEveHours.getText().toString()), night = VolumeGuard.parseRange(etNightHours.getText().toString());
         if (eve == null || night == null) Toast.makeText(this, "Часы громкости: пишите так — 21-9 или 21:30-8:30", Toast.LENGTH_LONG).show();

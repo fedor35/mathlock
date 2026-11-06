@@ -7,8 +7,8 @@ android {
         applicationId "dev.gubenkov.mathlock"
         minSdk 26
         targetSdk 34
-        versionCode 9
-        versionName "0.3.6"
+        versionCode 10
+        versionName "0.4.0"
     }
     // Ключ релиза живёт вне репозитория; без MATHLOCK_KEYSTORE release соберётся неподписанным.
     signingConfigs {
@@ -30,7 +30,8 @@ android {
                 signingConfig signingConfigs.release
             }
         }
-        debug { }
+        // -PdevCopy: отладочная копия рядом с рабочей (тесты на чужом телефоне, где стоит «Таблица» с админом устройства)
+        debug { if (project.hasProperty("devCopy")) applicationIdSuffix ".dev" }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

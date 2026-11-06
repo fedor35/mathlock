@@ -28,7 +28,12 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     private Problem cur;
     private int correct;
     private final StringBuilder input = new StringBuilder();
-    private TextView tvProblem, tvInput, tvProgress, tvHint;
+    private TextView tvProblem, tvInput, tvProgress, tvHint, tvOpen;
+    private FactStats facts;
+    private final java.util.ArrayList<String> recent = new java.util.ArrayList<>();
+    private long shownAt;
+    /** Разблокировка уже заработана, ребёнок решает ещё — копит минуты до контрольной проверки (идея сына 07.11). */
+    private boolean bonusMode;
     private final Handler h = new Handler(Looper.getMainLooper());
     private boolean done;
     private boolean guard;
@@ -42,6 +47,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = new Prefs(this);
+        facts = new FactStats(new java.io.File(getFilesDir(), "facts.tsv"));
         setShowWhenLocked(true);
         // Экран примеры сами НЕ включают: их показывают, когда экран уже зажгли
         // кнопкой (SCREEN_ON). С turnScreenOn блокировка кнопкой тут же снова
@@ -114,6 +120,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         setIntent(i);
         boolean g = i.getBooleanExtra(EXTRA_GUARD, false);
         if (g != guard) { guard = g; correct = 0; stopReading(); buildUi(); next(null); }
+        else if (bonusMode && prefs.locked()) { bonusMode = false; correct = 0; buildUi(); next(null); }   // экран гас — новая блокировка
     }
 
     @Override public void onConfigurationChanged(android.content.res.Configuration c) {
@@ -123,6 +130,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         tvProblem.setText(guard ? "Родительский код" : cur.toString());
         tvInput.setText(input);
         tvProgress.setText(progressText());
+        tvOpen.setVisibility(bonusMode ? View.VISIBLE : View.GONE);
     }
 
     @Override protected void onStart() {
@@ -137,6 +145,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         super.onStop();
         if (reading != null) reading.onStop();
         // Если нас свернули, а разблокировка не пройдена — вернёмся сами (страховка к WatchService).
+        if (bonusMode && !done && !prefs.locked()) { done = true; finishAndRemoveTask(); return; }   // ушёл из «ещё примеров» — просто открыто
         if (!done && !guard && prefs.enabled() && prefs.locked()) h.postDelayed(() -> { if (!done) LockService.showQuiz(this); }, 400);
     }
 
@@ -184,6 +193,18 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         lp = new LinearLayout.LayoutParams(-2, -2);
         lp.topMargin = dp(12);
         root.addView(tvHint, lp);
+
+        tvOpen = text(22, "#FFFFFF");
+        tvOpen.setText("Открыть телефон");
+        tvOpen.setTypeface(Typeface.DEFAULT_BOLD);
+        tvOpen.setPadding(dp(28), dp(12), dp(28), dp(12));
+        android.graphics.drawable.GradientDrawable ob = new android.graphics.drawable.GradientDrawable();
+        ob.setColor(Color.parseColor("#3CAA64")); ob.setCornerRadius(dp(28)); tvOpen.setBackground(ob);
+        tvOpen.setOnClickListener(v -> finishUnlock());
+        tvOpen.setVisibility(bonusMode ? View.VISIBLE : View.GONE);
+        lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.topMargin = dp(8);
+        root.addView(tvOpen, lp);
 
         if (!land) {
             View spacer = new View(this);
@@ -234,12 +255,18 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     private String progressText() {
         if (guard) return "Настройки защищены";
+        if (bonusMode) {
+            int bank = prefs.checkBankMin(), max = prefs.bankMaxMin();
+            return bank >= max ? "Запас полный: " + bank + " мин" : "Открыто! Реши ещё — +" + prefs.bonusPerExampleMin() + " мин до проверки\nЗапас: " + bank + " из " + max + " мин";
+        }
         int need = prefs.needNow();
         return need == 1 ? "Контрольный пример" : "Решено " + correct + " из " + need;
     }
 
     private void next(String hint) {
-        cur = Problem.random(rnd, prefs.minFactor(), prefs.maxFactor(), cur);
+        cur = facts.pick(rnd, prefs.minFactor(), prefs.maxFactor(), recent);
+        recent.add(FactStats.key(cur.a, cur.b)); while (recent.size() > 3) recent.remove(0);
+        shownAt = android.os.SystemClock.elapsedRealtime();
         input.setLength(0);
         tvProblem.setText(guard ? "Родительский код" : cur.toString());
         tvInput.setText("");
@@ -270,9 +297,23 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         try { v = Integer.parseInt(input.toString()); } catch (NumberFormatException e) { v = -1; }
         boolean ok = v == cur.answer();
         prefs.bumpStat(!ok);
+        facts.record(cur.a, cur.b, ok, android.os.SystemClock.elapsedRealtime() - shownAt, System.currentTimeMillis());
+        if (bonusMode) {
+            if (ok) {
+                int bank = Math.min(prefs.bankMaxMin(), prefs.checkBankMin() + prefs.bonusPerExampleMin());
+                prefs.setCheckBankMin(bank);
+                if (bank >= prefs.bankMaxMin()) { tvProgress.setText(progressText()); h.postDelayed(this::finishUnlock, 1200); done = true; return; }
+                next("Верно! +" + prefs.bonusPerExampleMin() + " мин");
+            } else {
+                tvHint.setText("Нет. " + cur.a + " × " + cur.b + " = " + cur.answer());
+                h.postDelayed(() -> next(null), 2500);
+                input.setLength(0); tvInput.setText("");
+            }
+            return;
+        }
         if (ok) {
             correct++;
-            if (correct >= prefs.needNow()) { unlock(); return; }
+            if (correct >= prefs.needNow()) { unlock(true); return; }
             next("Верно!");
         } else {
             correct = 0;
@@ -286,7 +327,10 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     @Override protected void onDestroy() { stopReading(); super.onDestroy(); }
 
-    private void unlock() {
+    private void unlock() { unlock(false); }
+
+    /** @param offerBonus разблокировка заработана примерами — предложить «ещё пример +5 мин» (не для кода родителя и чтения). */
+    private void unlock(boolean offerBonus) {
         done = true;
         stopReading();
         if (guard) {
@@ -297,6 +341,18 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         }
         prefs.setLocked(false);
         prefs.setNeedNow(prefs.needCorrect());
+        // Заработал разблокировку примерами — можно решить ещё и отодвинуть контрольную проверку
+        if (offerBonus && tvOpen != null && prefs.bonusPerExampleMin() > 0 && prefs.checkIntervalMin() > 0 && prefs.checkBankMin() < prefs.bankMaxMin()) {
+            done = false; bonusMode = true; correct = 0;
+            tvOpen.setVisibility(View.VISIBLE);
+            next("Верно!");
+            return;
+        }
+        finishUnlock();
+    }
+
+    private void finishUnlock() {
+        done = true;
         try { stopLockTask(); } catch (Exception ignored) { }
         finishAndRemoveTask();
     }
