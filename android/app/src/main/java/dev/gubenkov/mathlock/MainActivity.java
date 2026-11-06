@@ -24,7 +24,7 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
     private Prefs prefs;
     private LinearLayout perms;
-    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus, etVolDay, etVolEve, etVolNight;
+    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus, etVolDay, etVolEve, etVolNight, etEveHours, etNightHours;
     private TextView tvStat, tvReading;
     private Button btInstallApk, btPrepare;
     /** Идёт установка пакета или подготовка модели (минуты) — вторую не запускаем. */
@@ -65,9 +65,11 @@ public class MainActivity extends Activity {
         etGrace = field("Не спрашивать, если экран гас меньше (сек)", prefs.graceSeconds(), root);
         root.addView(label("Контрольные примеры во время игры"));
         etInterval = field("Каждые N минут работы экрана (0 = выключить)", prefs.checkIntervalMin(), root);
-        etVolDay = field("Громкость видео и игр днём (9–21), не выше %", prefs.volDayPct(), root);
-        etVolEve = field("Громкость вечером и утром (21–23, 7–9), не выше %", prefs.volEveningPct(), root);
-        etVolNight = field("Громкость ночью (23–7), не выше %", prefs.volNightPct(), root);
+        etEveHours = textField("Вечер: часы «с-до» (например 21-9 или 21:30-8:30)", VolumeGuard.fmtRange(prefs.eveFrom(), prefs.eveTo()), root);
+        etVolEve = field("Громкость видео и игр вечером, не выше % (50 = ползунок на середине)", prefs.volEveningPct(), root);
+        etNightHours = textField("Ночь: часы «с-до» (ночь важнее вечера; одинаковые часы — выключить)", VolumeGuard.fmtRange(prefs.nightFrom(), prefs.nightTo()), root);
+        etVolNight = field("Громкость ночью, не выше %", prefs.volNightPct(), root);
+        etVolDay = field("Громкость в остальное время, не выше % (100 = без ограничения)", prefs.volDayPct(), root);
         etCheckCount = field("Примеров в контрольной проверке", prefs.checkCount(), root);
         buildReadingSection(root);
         root.addView(label("Родительский код (цифры; ввод вместо ответа снимает блокировку)"));
@@ -192,6 +194,13 @@ public class MainActivity extends Activity {
         return e;
     }
 
+    private EditText textField(String name, String val, LinearLayout root) {
+        EditText e = field(name, 0, root);
+        e.setInputType(InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_TIME);
+        e.setText(val);
+        return e;
+    }
+
     private int num(EditText e, int def) {
         try { return Integer.parseInt(e.getText().toString().trim()); } catch (Exception x) { return def; }
     }
@@ -204,6 +213,10 @@ public class MainActivity extends Activity {
         prefs.setGraceSeconds(Math.max(0, num(etGrace, 20)));
         prefs.setCheckIntervalMin(Math.max(0, num(etInterval, 30)));
         prefs.setVolumes(pct(etVolDay, 100), pct(etVolEve, 50), pct(etVolNight, 30));
+        int[] eve = VolumeGuard.parseRange(etEveHours.getText().toString()), night = VolumeGuard.parseRange(etNightHours.getText().toString());
+        if (eve == null || night == null) Toast.makeText(this, "Часы громкости: пишите так — 21-9 или 21:30-8:30", Toast.LENGTH_LONG).show();
+        else prefs.setVolumeHours(eve[0], eve[1], night[0], night[1]);
+        etEveHours.setText(VolumeGuard.fmtRange(prefs.eveFrom(), prefs.eveTo())); etNightHours.setText(VolumeGuard.fmtRange(prefs.nightFrom(), prefs.nightTo()));
         VolumeGuard.start(this);
         prefs.setCheckCount(Math.max(1, Math.min(20, num(etCheckCount, 1))));
         prefs.setReadThresholdPct(TaskPicker.clampThreshold(num(etThreshold, TaskPicker.READ_TO_END)));
