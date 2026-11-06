@@ -142,6 +142,7 @@ final class ReadingScreen {
         build();
         show();
         ReadingEngine.acquire(); engineHeld = true;
+        MediaHush.hold(act);   // видео/музыка этого телефона на паузу, иначе микрофон слышит их
         mic.setEnabled(false);
         status.setText("Готовлюсь…");
         new Thread(() -> {
@@ -168,6 +169,7 @@ final class ReadingScreen {
         closed = true; recording = false;
         h.removeCallbacksAndMessages(null);
         stopAudio();
+        MediaHush.release(act);
         if (engineHeld) { engineHeld = false; ReadingEngine.release(); }
     }
 
@@ -459,10 +461,12 @@ final class ReadingScreen {
         try {
             ar = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SR, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, SR * 2);
             if (ar.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("AudioRecord не инициализирован");
+            MediaHush.mute(act);   // игры фокус не слушают — глушим медиа на время записи
             ar.startRecording();
         } catch (Throwable e) {
             Log.e(TAG, "микрофон", e);
             if (ar != null) ar.release();
+            MediaHush.unmute(act);
             recording = false;
             h.post(() -> { if (!closed) { close(); host.onReadingFallback("Микрофон недоступен"); } });
             return;
@@ -502,6 +506,7 @@ final class ReadingScreen {
         } catch (Throwable e) { Log.e(TAG, "чтение", e); }
         try { ar.stop(); } catch (Exception ignored) { }
         ar.release();
+        MediaHush.unmute(act);   // до праздничного звука и «послушать»
         recording = false;
         if (closed) return;
         if (aborted) {
