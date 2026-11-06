@@ -94,6 +94,13 @@ public final class Prefs {
         return was >= 0 && was != bootCount;   // первый запуск этой версии — просто запомнить, не блокировать
     }
 
+    /** Запас минут, накопленный дополнительными примерами: контрольная проверка отодвигается на столько. */
+    public int checkBankMin() { return sp.getInt("check_bank", 0); }
+    public void setCheckBankMin(int v) { sp.edit().putInt("check_bank", v).apply(); }
+    public int bonusPerExampleMin() { return sp.getInt("bonus_per_example", 5); }
+    public int bankMaxMin() { return sp.getInt("bank_max", 30); }
+    public void setBonus(int perExample, int max) { sp.edit().putInt("bonus_per_example", perExample).putInt("bank_max", max).apply(); }
+
     public int readStartLevel() { return sp.getInt("read_start_level", 5); }
     public void setReadStartLevel(int v) { sp.edit().putInt("read_start_level", v).apply(); }
     /** Счётчик сеансов «вперемешку»: чётный — чтение, нечётный — примеры. */

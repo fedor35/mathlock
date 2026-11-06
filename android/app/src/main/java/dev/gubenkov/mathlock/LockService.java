@@ -31,6 +31,8 @@ public class LockService extends Service {
             Prefs p = new Prefs(LockService.this);
             int min = p.checkIntervalMin();
             if (!p.enabled() || min <= 0) return;
+            int bank = p.checkBankMin();   // запас за дополнительные примеры — отодвигает проверку
+            if (bank > 0) { p.setCheckBankMin(0); h.postDelayed(this, bank * 60_000L); return; }
             long free = p.freeLeftMs();   // бонусное время за новый уровень — проверка после него
             if (free > 0) { h.postDelayed(this, free + min * 60_000L); return; }
             if (!p.locked()) {
