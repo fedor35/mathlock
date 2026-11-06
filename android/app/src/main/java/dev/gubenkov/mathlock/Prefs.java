@@ -64,6 +64,14 @@ public final class Prefs {
     public int readThresholdPct() { return sp.getInt("read_threshold", TaskPicker.READ_TO_END); }
     public void setReadThresholdPct(int v) { sp.edit().putInt("read_threshold", v).apply(); }
     /** Стартовый уровень текстов для нового чтеца (без истории). */
+    /** Награда за новый уровень чтения: столько минут без заданий (0 — выключено). */
+    public int levelUpBonusMin() { return sp.getInt("levelup_bonus_min", 30); }
+    public void setLevelUpBonusMin(int v) { sp.edit().putInt("levelup_bonus_min", v).apply(); }
+    /** До этого момента (System.currentTimeMillis) заданий нет: ни при включении экрана, ни по таймеру. */
+    public long freeUntil() { return sp.getLong("free_until", 0); }
+    public void setFreeUntil(long t) { sp.edit().putLong("free_until", t).commit(); }
+    public long freeLeftMs() { return Math.max(0, freeUntil() - System.currentTimeMillis()); }
+
     public int readStartLevel() { return sp.getInt("read_start_level", 5); }
     public void setReadStartLevel(int v) { sp.edit().putInt("read_start_level", v).apply(); }
     /** Счётчик сеансов «вперемешку»: чётный — чтение, нечётный — примеры. */

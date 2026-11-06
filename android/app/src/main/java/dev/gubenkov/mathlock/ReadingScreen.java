@@ -614,7 +614,14 @@ final class ReadingScreen {
     String levelNews(ReadingStats st, int before, float best) {
         int after = adapt.level(); String msg = "";
         if (st.accuracy() >= 0.95f && st.wcpm() > best && best > 0) msg += " — новый рекорд!";
-        if (after > before) msg += "\nНовый уровень " + after + "!";
+        if (after > before) {
+            msg += "\nНовый уровень " + after + "!";
+            int bonus = prefs.levelUpBonusMin();
+            if (bonus > 0) {   // награда временем: столько минут без заданий
+                prefs.setFreeUntil(System.currentTimeMillis() + bonus * 60_000L);
+                msg += "\n🎁 +" + bonus + " минут без заданий";
+            }
+        }
         else if (after < before) msg += "\nПотренируемся на уровне " + after;
         return msg;
     }
