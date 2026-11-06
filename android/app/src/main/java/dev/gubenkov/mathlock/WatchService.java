@@ -21,11 +21,17 @@ public class WatchService extends AccessibilityService {
         Prefs p = new Prefs(this);
         if (!p.enabled()) return;
         if (!LockService.running) {
-            p.setLocked(true);
-            p.setScreenOffAt(0);
-            p.setNeedNow(p.needCorrect());
+            // Настоящая загрузка — полная блокировка. Перезапуск процесса посреди игры (обновление приложения,
+            // система выгрузила процесс) — не блокировка: раньше тут ребёнок получал 3 примера ни с того ни с сего
+            // (журнал 06–07.11: 21:48, 00:09, 00:14, 00:26). Если блокировка уже стояла — она остаётся как была.
+            boolean boot = p.newBoot(android.provider.Settings.Global.getInt(getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1));
+            if (boot) {
+                p.setLocked(true);
+                p.setScreenOffAt(0);
+                p.setNeedNow(p.needCorrect());
+            }
             LockService.start(this);
-            LockService.showQuiz(this);
+            if (p.locked()) LockService.showQuiz(this);
         }
     }
 

@@ -86,6 +86,14 @@ public final class Prefs {
     }
     public void setVolumes(int day, int evening, int night) { sp.edit().putInt("vol_day", day).putInt("vol_evening", evening).putInt("vol_night", night).apply(); }
 
+    /** Счётчик загрузок телефона изменился с прошлого раза → это загрузка; запоминает новый. */
+    public boolean newBoot(int bootCount) {
+        if (bootCount < 0) return true;
+        int was = sp.getInt("boot_count", -1);
+        if (was != bootCount) sp.edit().putInt("boot_count", bootCount).commit();
+        return was >= 0 && was != bootCount;   // первый запуск этой версии — просто запомнить, не блокировать
+    }
+
     public int readStartLevel() { return sp.getInt("read_start_level", 5); }
     public void setReadStartLevel(int v) { sp.edit().putInt("read_start_level", v).apply(); }
     /** Счётчик сеансов «вперемешку»: чётный — чтение, нечётный — примеры. */
