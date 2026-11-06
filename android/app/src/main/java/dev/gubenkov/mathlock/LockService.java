@@ -58,7 +58,7 @@ public class LockService extends Service {
                     p.setLocked(true);
                 }
             } else if (Intent.ACTION_SCREEN_ON.equals(act) || Intent.ACTION_USER_PRESENT.equals(act)) {
-                if (Intent.ACTION_SCREEN_ON.equals(act)) schedulePeriodic();
+                if (Intent.ACTION_SCREEN_ON.equals(act)) { schedulePeriodic(); AdbKeeper.start(c); }
                 maybeShowQuiz(c);
             }
         }
