@@ -31,6 +31,8 @@ public class LockService extends Service {
             Prefs p = new Prefs(LockService.this);
             int min = p.checkIntervalMin();
             if (!p.enabled() || min <= 0) return;
+            long free = p.freeLeftMs();   // бонусное время за новый уровень — проверка после него
+            if (free > 0) { h.postDelayed(this, free + min * 60_000L); return; }
             if (!p.locked()) {
                 p.setNeedNow(p.checkCount());
                 p.setScreenOffAt(0);
@@ -44,7 +46,7 @@ public class LockService extends Service {
     private void schedulePeriodic() {
         h.removeCallbacks(periodic);
         Prefs p = new Prefs(this);
-        if (p.enabled() && p.checkIntervalMin() > 0) h.postDelayed(periodic, p.checkIntervalMin() * 60_000L);
+        if (p.enabled() && p.checkIntervalMin() > 0) h.postDelayed(periodic, p.freeLeftMs() + p.checkIntervalMin() * 60_000L);
     }
 
     private final BroadcastReceiver screen = new BroadcastReceiver() {
@@ -53,7 +55,7 @@ public class LockService extends Service {
             String act = i.getAction();
             if (Intent.ACTION_SCREEN_OFF.equals(act)) {
                 h.removeCallbacks(periodic);
-                if (p.enabled()) {
+                if (p.enabled() && p.freeLeftMs() == 0) {   // в бонусное время гашение экрана не блокирует
                     if (!p.locked()) { p.setScreenOffAt(SystemClock.elapsedRealtime()); p.setNeedNow(p.needCorrect()); }
                     p.setLocked(true);
                 }

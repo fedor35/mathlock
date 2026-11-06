@@ -24,7 +24,7 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
     private Prefs prefs;
     private LinearLayout perms;
-    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel;
+    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus;
     private TextView tvStat, tvReading;
     private Button btInstallApk, btPrepare;
     /** Идёт установка пакета или подготовка модели (минуты) — вторую не запускаем. */
@@ -203,6 +203,7 @@ public class MainActivity extends Activity {
         prefs.setCheckCount(Math.max(1, Math.min(20, num(etCheckCount, 1))));
         prefs.setReadThresholdPct(TaskPicker.clampThreshold(num(etThreshold, TaskPicker.READ_TO_END)));
         prefs.setReadStartLevel(Math.max(1, Math.min(9, num(etStartLevel, 5))));
+        prefs.setLevelUpBonusMin(Math.max(0, Math.min(240, num(etBonus, 30))));
         etThreshold.setText(String.valueOf(prefs.readThresholdPct())); etStartLevel.setText(String.valueOf(prefs.readStartLevel()));
         if (prefs.enabled()) LockService.start(this);
         String code = etCode.getText().toString().trim();
@@ -257,6 +258,7 @@ public class MainActivity extends Activity {
 
         etThreshold = field("Точность для разблокировки чтением, % (100 = все слова верно, красные перечитать; 0 = достаточно дочитать до конца)", prefs.readThresholdPct(), root);
         etStartLevel = field("Стартовый уровень текстов для нового чтеца (1–9)", prefs.readStartLevel(), root);
+        etBonus = field("Награда за новый уровень чтения: минут без заданий (0 = выключить)", prefs.levelUpBonusMin(), root);
         Button test = new Button(this);
         test.setText("Показать экран чтения сейчас");
         test.setOnClickListener(v -> startActivity(new Intent(this, QuizActivity.class).putExtra(QuizActivity.EXTRA_TASK, "reading")));
