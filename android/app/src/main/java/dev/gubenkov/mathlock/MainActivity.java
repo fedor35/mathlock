@@ -24,7 +24,7 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
     private Prefs prefs;
     private LinearLayout perms;
-    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus;
+    private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus, etVolDay, etVolEve, etVolNight;
     private TextView tvStat, tvReading;
     private Button btInstallApk, btPrepare;
     /** Идёт установка пакета или подготовка модели (минуты) — вторую не запускаем. */
@@ -65,6 +65,9 @@ public class MainActivity extends Activity {
         etGrace = field("Не спрашивать, если экран гас меньше (сек)", prefs.graceSeconds(), root);
         root.addView(label("Контрольные примеры во время игры"));
         etInterval = field("Каждые N минут работы экрана (0 = выключить)", prefs.checkIntervalMin(), root);
+        etVolDay = field("Громкость видео и игр днём (9–21), не выше %", prefs.volDayPct(), root);
+        etVolEve = field("Громкость вечером и утром (21–23, 7–9), не выше %", prefs.volEveningPct(), root);
+        etVolNight = field("Громкость ночью (23–7), не выше %", prefs.volNightPct(), root);
         etCheckCount = field("Примеров в контрольной проверке", prefs.checkCount(), root);
         buildReadingSection(root);
         root.addView(label("Родительский код (цифры; ввод вместо ответа снимает блокировку)"));
@@ -200,6 +203,8 @@ public class MainActivity extends Activity {
         prefs.setNeedCorrect(Math.max(1, Math.min(20, num(etNeed, 3))));
         prefs.setGraceSeconds(Math.max(0, num(etGrace, 20)));
         prefs.setCheckIntervalMin(Math.max(0, num(etInterval, 30)));
+        prefs.setVolumes(pct(etVolDay, 100), pct(etVolEve, 50), pct(etVolNight, 30));
+        VolumeGuard.start(this);
         prefs.setCheckCount(Math.max(1, Math.min(20, num(etCheckCount, 1))));
         prefs.setReadThresholdPct(TaskPicker.clampThreshold(num(etThreshold, TaskPicker.READ_TO_END)));
         prefs.setReadStartLevel(Math.max(1, Math.min(9, num(etStartLevel, 5))));
@@ -212,6 +217,8 @@ public class MainActivity extends Activity {
         etMin.setText(String.valueOf(min)); etMax.setText(String.valueOf(max));
         Toast.makeText(this, "Сохранено", Toast.LENGTH_SHORT).show();
     }
+
+    private int pct(android.widget.EditText e, int def) { return Math.max(5, Math.min(100, num(e, def))); }
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
