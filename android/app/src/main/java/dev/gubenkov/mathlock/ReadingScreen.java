@@ -179,6 +179,7 @@ final class ReadingScreen {
     void close() {
         if (closed) return;
         closed = true; recording = false;
+        act.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         h.removeCallbacksAndMessages(null);
         stopAudio();
         MediaHush.release(act);
@@ -496,6 +497,10 @@ final class ReadingScreen {
     void setListening(boolean on) {
         mic.set(on ? RoundIcon.STOP : RoundIcon.MIC, on ? LISTENING : ACCENT);
         mic.setPulsing(on);
+        // экран не гаснет только пока ребёнок читает (длинный текст — дольше тайм-аута экрана, а касаний нет);
+        // в остальное время — обычный тайм-аут, иначе экран блокировки горел часами (на зарядке, 11.11)
+        if (on) act.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else act.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     void readLoop() {
