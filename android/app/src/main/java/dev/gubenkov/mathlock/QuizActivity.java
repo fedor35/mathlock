@@ -30,6 +30,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     private final StringBuilder input = new StringBuilder();
     private TextView tvProblem, tvInput, tvProgress, tvHint, tvOpen;
     private FactStats facts;
+    private TextView tvTable;
     private final java.util.ArrayList<String> recent = new java.util.ArrayList<>();
     private long shownAt;
     /** Разблокировка уже заработана, ребёнок решает ещё — копит минуты до контрольной проверки (идея сына 07.11). */
@@ -180,6 +181,18 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         tvProgress = text(18, "#9FB3C8");
         root.addView(tvProgress);
 
+        // «Моя таблица» — ребёнок собирает выученные примеры (детям важны уровни и награды; сетка для родителя — в настройках)
+        if (!guard) {
+            tvTable = text(16, "#F2D46B");
+            tvTable.setText(tableText());
+            tvTable.setPadding(dp(14), dp(6), dp(14), dp(6));
+            android.graphics.drawable.GradientDrawable tb = new android.graphics.drawable.GradientDrawable();
+            tb.setColor(Color.parseColor("#26323F")); tb.setCornerRadius(dp(18)); tvTable.setBackground(tb);
+            tvTable.setOnClickListener(v -> showMyTable());
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-2, -2); tlp.topMargin = dp(10);
+            root.addView(tvTable, tlp);
+        }
+
         tvProblem = text(guard ? 34 : 64, "#FFFFFF");
         tvProblem.setTypeface(Typeface.DEFAULT_BOLD);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
@@ -247,6 +260,54 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         setContentView(outer);
     }
 
+    private String tableText() { return "⭐ Моя таблица: " + facts.learnedCount() + " из " + FactStats.TOTAL; }
+
+    /** Поздравление: пример выучен, а если с ним выучен весь столбик — кубок. */
+    private String starNews(int a, int b) {
+        for (int k : new int[]{a, b}) if (k >= 2 && k <= 9 && facts.rowLearned(k)) return "🏆 Все примеры на " + k + " выучены!";
+        return "⭐ Выучен пример " + Math.min(a, b) + "×" + Math.max(a, b) + "! Теперь " + facts.learnedCount() + " из " + FactStats.TOTAL;
+    }
+
+    /** Сетка 2…9 для ребёнка: выученные — ответ на зелёном, остальные — «?». Подсказкой не служит: ответов там, где не выучено, нет. */
+    private void showMyTable() {
+        if (done) return;
+        android.widget.FrameLayout over = new android.widget.FrameLayout(this);
+        over.setBackgroundColor(Color.parseColor("#F01B2430")); over.setClickable(true);
+        LinearLayout box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView title = text(24, "#FFFFFF"); title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setText("Моя таблица: " + facts.learnedCount() + " из " + FactStats.TOTAL);
+        box.addView(title);
+        TextView sub = text(15, "#9FB3C8"); sub.setText("Пример выучен, когда трижды подряд решён быстро"); sub.setPadding(0, dp(6), 0, dp(14));
+        box.addView(sub);
+        GridLayout g = new GridLayout(this); g.setColumnCount(9);
+        int cell = Math.min(dp(38), (getResources().getDisplayMetrics().widthPixels - dp(40)) / 9);
+        for (int r = 1; r <= 9; r++) for (int c = 1; c <= 9; c++) {
+            TextView t = text(14, "#FFFFFF");
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(); lp.width = cell; lp.height = cell; lp.setMargins(2, 2, 2, 2);
+            t.setLayoutParams(lp);
+            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable(); bg.setCornerRadius(dp(6));
+            if (r == 1 || c == 1) { t.setText(r == 1 && c == 1 ? "×" : String.valueOf(r == 1 ? c : r)); t.setTextColor(Color.parseColor("#9FB3C8")); }
+            else if (facts.learned(r, c)) { t.setText(String.valueOf(r * c)); bg.setColor(Color.parseColor("#3CAA64")); t.setTypeface(Typeface.DEFAULT_BOLD); }
+            else { t.setText("?"); t.setTextColor(Color.parseColor("#5E7189")); bg.setColor(Color.parseColor("#26323F")); }
+            t.setBackground(bg);
+            g.addView(t);
+        }
+        box.addView(g);
+        StringBuilder rows = new StringBuilder();
+        for (int k = 2; k <= 9; k++) if (facts.rowLearned(k)) rows.append(rows.length() == 0 ? "🏆 Выучены все на " : ", ").append(k);
+        if (rows.length() > 0) { TextView rw = text(17, "#F2D46B"); rw.setText(rows); rw.setPadding(0, dp(14), 0, 0); box.addView(rw); }
+        TextView close = text(20, "#FFFFFF"); close.setText("Решать дальше"); close.setTypeface(Typeface.DEFAULT_BOLD);
+        close.setPadding(dp(28), dp(12), dp(28), dp(12));
+        android.graphics.drawable.GradientDrawable cb = new android.graphics.drawable.GradientDrawable();
+        cb.setColor(Color.parseColor("#5B8DEF")); cb.setCornerRadius(dp(28)); close.setBackground(cb);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2); clp.topMargin = dp(22);
+        box.addView(close, clp);
+        over.addView(box, new android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+        android.view.ViewGroup content = findViewById(android.R.id.content);
+        content.addView(over, new android.view.ViewGroup.LayoutParams(-1, -1));
+        close.setOnClickListener(v -> content.removeView(over));
+    }
+
     private TextView text(int sp, String color) {
         TextView t = new TextView(this);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
@@ -301,13 +362,17 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         try { v = Integer.parseInt(input.toString()); } catch (NumberFormatException e) { v = -1; }
         boolean ok = v == cur.answer();
         prefs.bumpStat(!ok);
-        facts.record(cur.a, cur.b, ok, android.os.SystemClock.elapsedRealtime() - shownAt, System.currentTimeMillis());
+        long ms = android.os.SystemClock.elapsedRealtime() - shownAt, now = System.currentTimeMillis();
+        boolean fresh = facts.record(cur.a, cur.b, ok, ms, now);
+        facts.logAnswer(cur.a, cur.b, v, ok, ms, now);
+        String star = fresh ? starNews(cur.a, cur.b) : null;
+        if (tvTable != null) tvTable.setText(tableText());
         if (bonusMode) {
             if (ok) {
                 int bank = Math.min(prefs.bankMaxMin(), prefs.checkBankMin() + prefs.bonusPerExampleMin());
                 prefs.setCheckBankMin(bank);
                 if (bank >= prefs.bankMaxMin()) { tvProgress.setText(progressText()); h.postDelayed(this::finishUnlock, 1200); done = true; return; }
-                next("Верно! +" + prefs.bonusPerExampleMin() + " мин");
+                next(star != null ? star : "Верно! +" + prefs.bonusPerExampleMin() + " мин");
             } else {
                 tvHint.setText("Нет. " + cur.a + " × " + cur.b + " = " + cur.answer());
                 h.postDelayed(() -> next(null), 2500);
@@ -317,8 +382,8 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         }
         if (ok) {
             correct++;
-            if (correct >= prefs.needNow()) { unlock(true); return; }
-            next("Верно!");
+            if (correct >= prefs.needNow()) { unlock(true, star); return; }
+            next(star != null ? star : "Верно!");
         } else {
             correct = 0;
             String was = cur.a + " × " + cur.b + " = " + cur.answer();
@@ -331,10 +396,11 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     @Override protected void onDestroy() { stopReading(); super.onDestroy(); }
 
-    private void unlock() { unlock(false); }
+    private void unlock() { unlock(false, null); }
+    private void unlock(boolean offerBonus) { unlock(offerBonus, null); }
 
     /** @param offerBonus разблокировка заработана примерами — предложить «ещё пример +5 мин» (не для кода родителя и чтения). */
-    private void unlock(boolean offerBonus) {
+    private void unlock(boolean offerBonus, String star) {
         done = true;
         stopReading();
         if (guard) {
@@ -349,8 +415,12 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         if (offerBonus && tvOpen != null && prefs.bonusPerExampleMin() > 0 && prefs.checkIntervalMin() > 0 && prefs.checkBankMin() < prefs.bankMaxMin()) {
             done = false; bonusMode = true; correct = 0;
             tvOpen.setVisibility(View.VISIBLE);
-            next("Верно!");
+            next(star != null ? star : "Верно!");
             return;
+        }
+        if (star != null && tvHint != null) {   // поздравление успеть увидеть
+            tvHint.setText(star); if (tvTable != null) tvTable.setText(tableText());
+            h.postDelayed(this::finishUnlock, 2200); return;
         }
         finishUnlock();
     }

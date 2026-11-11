@@ -99,4 +99,20 @@ public class LiveFixesTest {
         ReadingMatcher.Result r = m.match(new ReadingText("Мы прие́хали в аул. Там пасу́тся ло́шади."), "мы приехали в ау", false, null);
         assertEquals(OK, r.states[3]);
     }
+
+    /** Слово не собирается по буквам из разговора между попытками: «звонкие» из «…апрель апреле не читается покажи…» (сын, 07.11). */
+    @Test public void wordNotScrapedFromChatter() {
+        ReadingMatcher.Result r = new ReadingMatcher().match(new ReadingText("В апре́ле по у́лице побежа́ли зво́нкие весе́нние ручьи́."),
+                "в апреле по улице побежали апрель апреле не читается покажи вот мори апреле вот вот тут красные в апреле а так вот весенние ручьи", true);
+        assertEquals(OK, r.states[4]);
+        assertEquals(WRONG, r.states[5]);
+        assertEquals(OK, r.states[6]);
+    }
+
+    /** Растянутое повторами слово, сказанное подряд, засчитывается: «цеплялись… цеплялися». */
+    @Test public void stretchedByRepeatsStillOk() {
+        ReadingMatcher.Result r = new ReadingMatcher().match(new ReadingText("Семена́ мо́гут цепля́ться за шерсть."),
+                "семена могут цеплялись ся цеплялися за шерсть", true);
+        assertEquals(OK, r.states[2]);
+    }
 }

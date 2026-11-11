@@ -7,7 +7,7 @@
    LD_LIBRARY_PATH на `venv/.../nvidia/*/lib`, как в `/mnt/2tb/asr-tools/transcribe`.
 3. `compare.py <каталог>` — по чтецам: красные у приложения, которые Whisper слышит верно (кандидаты в ложные
    красные), и зелёные, где Whisper слышит другое слово.
-4. Java (классы модуля `reading` + org.json; `Reds <texts> <hyps>` — красные слова на озвучке по текстам):
+4. Java (классы модуля `reading` + org.json; `Reds <texts> <hyps>` — красные слова на озвучке по текстам; `Span <texts> <hyps.jsonl или recordings> <порог>` — растяжка засчитанных слов):
    - `E` — пересчёт сверки по сохранённым гипотезам: по словам состояние (записанное/сейчас), кусок гипотезы, цена;
    - `F <texts.jsonl> <hyps.jsonl>` — доля красных слов без и со `strictEndings` по уровням; на `hyps_ru6.jsonl`
      (жадные гипотезы GigaAM на эталонной озвучке, `ml/greedy_hyps.py`) это доля ложных красных.

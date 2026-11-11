@@ -48,4 +48,20 @@ public class FactStatsTest {
         ArrayList<String> recent = new ArrayList<>(); recent.add("2x2");
         for (int i = 0; i < 200; i++) { Problem p = f.pick(new Random(i), 2, 2, recent); assertNotEquals("2x2", FactStats.key(p.a, p.b)); }
     }
+
+    /** «Моя таблица»: пример выучен с третьего быстрого верного ответа; столбик — когда выучены все k×2…k×9. */
+    @Test public void learnedForChild() {
+        FactStats f = new FactStats(null);
+        assertFalse(f.record(6, 7, true, 2000, 0));
+        assertFalse(f.record(7, 6, true, 2000, 0));
+        assertTrue("третий быстрый — выучен", f.record(6, 7, true, 2000, 0));
+        assertFalse("уже выучен — второй раз не поздравляем", f.record(6, 7, true, 2000, 0));
+        assertEquals(1, f.learnedCount());
+        f.record(6, 7, false, 1000, 0);
+        assertEquals(0, f.learnedCount());
+        for (int b = 2; b <= 9; b++) for (int k = 0; k < 3; k++) f.record(5, b, true, 1000, 0);
+        assertTrue(f.rowLearned(5));
+        assertFalse(f.rowLearned(6));
+        assertEquals(8, f.learnedCount());
+    }
 }

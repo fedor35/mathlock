@@ -25,17 +25,14 @@ public class StopOnRedTest {
         assertEquals(OK, r.states[3]);
     }
 
-    /** Живая запись сына: ошибка, разговор, повторы «апреле», дальше текст — всё засчитано. */
+    /** Живая запись сына: ошибка, разговор, повторы «апреле», дальше текст — «апреле» засчитано; пропущенное «звонкие»
+     *  красное (до 0.4.6 оно собиралось по буквам из разговора и зеленело). */
     @Test public void sonLiveStream() {
         String full = "в аптеки по улице побежали аптек апрель апрель апрель апрель апрель не читается слово апрель апреле апреле не читается покажимн вотмори апреле вот вот тут красные в апреле а так вот весеннее весенние ручьи тимур и дима решили устроить гонку корабль обликов";
         String[] w = full.split(" ");
-        boolean everStuck = false;
-        for (int k = 1; k <= w.length; k++) {
-            String hyp = String.join(" ", java.util.Arrays.copyOf(w, k));
-            ReadingMatcher.Result r = shown(hyp);
-            if (k == w.length) everStuck = ReadingMatcher.firstWrong(r, null) >= 0;
-        }
-        assertFalse("в конце красного нет", everStuck);
+        ReadingMatcher.Result r = shown(full);
+        assertEquals(OK, r.states[1]);
+        assertEquals("красное — пропущенное «звонкие»", 5, ReadingMatcher.firstWrong(r, null));
     }
 
     @Test public void releasedRedLetsReadingGoOn() {

@@ -518,6 +518,7 @@ final class ReadingScreen {
         repairing = prev != null;
         final ReadingText text = cur;
         final String textId = curId(); final int level = textLevel; final boolean chall = challenge;
+        final JSONObject quiz = texts.get(idx).optJSONObject("quiz");
         int chunk = SR / 10;
         AudioRecord ar = null;
         java.io.InputStream wavIn = null;
@@ -661,7 +662,7 @@ final class ReadingScreen {
             if (closed) return;
             if (!n.isEmpty()) status.setText(status.getText() + "\n" + n);
             showLevel();
-            if (ok) h.postDelayed(() -> { if (!closed) host.onReadingPassed(); }, n.contains("🏅") ? 3800 : 2400);
+            if (ok) h.postDelayed(() -> { if (!closed) { if (quiz != null) showQuiz(textId, quiz); else host.onReadingPassed(); } }, n.contains("🏅") ? 3800 : 2400);
         });
     }
 
@@ -799,6 +800,66 @@ final class ReadingScreen {
         @Override public String toString() {
             return db.isEmpty() ? "" : String.format(Locale.ROOT, "пол %.1f дБ, речь %.1f дБ", pct(0, 0.1f), pct(0, 0.9f));
         }
+    }
+
+    // ---------------- вопрос на понимание ----------------
+
+    /** Сколько ждать ответа: вопрос не держит телефон закрытым — не ответил, разблокировка всё равно. */
+    static final long QUIZ_TIMEOUT_MS = 90_000;
+
+    /**
+     * Вопрос по прочитанному (познавательные тексты, поле quiz: q + options, первый вариант верный): после «Молодец!»,
+     * три кнопки в случайном порядке. На разблокировку не влияет — технику чтения проверяет сверка, а смысл длинного
+     * текста может проскочить мимо. Ответы — files/quiz.tsv (время, текст, верно, выбранный вариант) для родителя.
+     */
+    void showQuiz(String textId, JSONObject quiz) {
+        org.json.JSONArray opts = quiz.optJSONArray("options");
+        if (opts == null || opts.length() < 2 || quiz.optString("q").isEmpty()) { host.onReadingPassed(); return; }
+        final String right = opts.optString(0);
+        List<String> shuffled = new ArrayList<>(); for (int i = 0; i < opts.length(); i++) shuffled.add(opts.optString(i));
+        java.util.Collections.shuffle(shuffled, rnd);
+        FrameLayout fr = (FrameLayout) root;
+        LinearLayout box = new LinearLayout(act); box.setOrientation(LinearLayout.VERTICAL); box.setBackgroundColor(BG);
+        box.setGravity(Gravity.CENTER); box.setPadding(dp(24), dp(24), dp(24), dp(24)); box.setClickable(true);
+        TextView head = new TextView(act); head.setText("Вопрос по тексту"); head.setTextColor(DIM); head.setGravity(Gravity.CENTER);
+        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        TextView q = new TextView(act); q.setText(quiz.optString("q")); q.setTextColor(TEXT); q.setGravity(Gravity.CENTER);
+        q.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26); q.setTypeface(Typeface.DEFAULT_BOLD); q.setPadding(0, dp(12), 0, dp(28));
+        box.addView(head); box.addView(q);
+        TextView note = new TextView(act); note.setTextColor(TEXT); note.setGravity(Gravity.CENTER);
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19); note.setPadding(0, dp(18), 0, 0);
+        final List<TextView> btns = new ArrayList<>(); final boolean[] answered = {false};
+        final Runnable finish = () -> { if (!closed) host.onReadingPassed(); };
+        for (String o : shuffled) {
+            TextView b = new TextView(act); b.setText(o); b.setTextColor(TEXT); b.setGravity(Gravity.CENTER);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 21); b.setPadding(dp(16), dp(16), dp(16), dp(16));
+            GradientDrawable bg = new GradientDrawable(); bg.setColor(CHIP); bg.setCornerRadius(dp(22)); b.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(12);
+            b.setOnClickListener(v -> {
+                if (answered[0] || closed) return;
+                answered[0] = true; h.removeCallbacks(finish);
+                boolean ok = o.equals(right);
+                for (TextView x : btns) {
+                    String t = x.getText().toString();
+                    if (t.equals(right)) ((GradientDrawable) x.getBackground()).setColor(SUCCESS);
+                    else if (x == v) ((GradientDrawable) x.getBackground()).setColor(LISTENING);
+                }
+                note.setText(ok ? "Верно! 🧠" : "Правильный ответ — зелёный");
+                if (ok) play(Sounds.coin(44100), 44100);
+                logQuiz(textId, ok, o);
+                h.postDelayed(finish, ok ? 1600 : 3000);
+            });
+            btns.add(b); box.addView(b, lp);
+        }
+        box.addView(note);
+        fr.addView(box, new FrameLayout.LayoutParams(-1, -1));
+        h.postDelayed(finish, QUIZ_TIMEOUT_MS);
+    }
+
+    void logQuiz(String textId, boolean ok, String chosen) {
+        try (FileOutputStream o = new FileOutputStream(new File(dir(), "quiz.tsv"), true)) {
+            o.write((System.currentTimeMillis() + "\t" + textId + "\t" + (ok ? 1 : 0) + "\t" + chosen + "\n").getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) { Log.w(TAG, "quiz.tsv: " + e); }
     }
 
     // ---------------- звук ----------------
