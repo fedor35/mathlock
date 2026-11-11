@@ -51,8 +51,8 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         setShowWhenLocked(true);
         // Экран примеры сами НЕ включают: их показывают, когда экран уже зажгли
         // кнопкой (SCREEN_ON). С turnScreenOn блокировка кнопкой тут же снова
-        // зажигала экран — квиз запускался вдогонку гашению.
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // зажигала экран — квиз запускался вдогонку гашению. FLAG_KEEP_SCREEN_ON здесь тоже нет: брошенный экран
+        // блокировки не гас вовсе (11.11, на зарядке горело чтение); экран держит только запись чтения (ReadingScreen).
         getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         KeyguardManager km = getSystemService(KeyguardManager.class);
         if (km != null) km.requestDismissKeyguard(this, null);
