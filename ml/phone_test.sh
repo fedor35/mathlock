@@ -43,9 +43,23 @@ wake() {
     # из AOD (Dozing) KEYCODE_WAKEUP не будит — только кнопка питания; бодрствующий экран ею бы погасили
     a shell dumpsys power | grep -q "mWakefulness=Awake" || a shell input keyevent KEYCODE_POWER
     sleep 2
-    # системная блокировка без кода — смахнуть; если на экране «Таблица» (блокировка примерами/чтением), смахивание ничего не ломает
-    a shell 'dumpsys window | grep -q "isKeyguardShowing=true"' && a shell input swipe 540 1900 540 500 250 || true
-    sleep 1
+    # системная блокировка: смахнуть и нарисовать графический ключ (только локально: ~/.secrets/mathlock-android/pattern.txt,
+    # точки 1…9 как на телефонной клавиатуре; поле ключа 13 Lite — квадрат [141,1319]–[938,2116])
+    if a shell 'dumpsys window | grep -q "isKeyguardShowing=true"'; then
+        a shell input swipe 540 1900 540 500 200
+        sleep 1
+        pf="$HOME/.secrets/mathlock-android/pattern.txt"
+        if [ -s "$pf" ]; then
+            cmd=""; last=""
+            for p in $(tr -- '-' ' ' < "$pf"); do
+                x=$((274 + ((p - 1) % 3) * 265)); y=$((1452 + ((p - 1) / 3) * 265))
+                if [ -z "$cmd" ]; then cmd="input motionevent DOWN $x $y"; else cmd="$cmd; input motionevent MOVE $x $y"; fi
+                last="$x $y"
+            done
+            a shell "$cmd; input motionevent UP $last"
+            sleep 2
+        fi
+    fi
     unlock_real
 }
 
@@ -65,7 +79,8 @@ read)
     a shell "cp $M/texts.jsonl $F/texts.jsonl; chmod 666 $F/*.* 2>/dev/null; true"
     prev=$(a shell settings get global stay_on_while_plugged_in | tr -d '\r')
     a shell svc power stayon true
-    trap 'a shell settings put global stay_on_while_plugged_in "${prev:-0}"' EXIT
+    # после теста — экран как был и погашен: рабочая «Таблица» снова блокирует телефон
+    trap 'a shell settings put global stay_on_while_plugged_in "${prev:-0}"; a shell input keyevent KEYCODE_SLEEP' EXIT
     wake
     a shell am start -n $PKG/dev.gubenkov.mathlock.MainActivity --es wav "$F/test.wav" --es text_id "$id" >/dev/null
     sleep 5; a shell input tap 540 2156          # микрофон (портрет 1080×2400): запись из файла идёт по нажатию, как у ребёнка

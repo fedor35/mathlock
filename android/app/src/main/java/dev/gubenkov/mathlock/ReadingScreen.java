@@ -555,7 +555,7 @@ final class ReadingScreen {
         long maxSamples = SR * Math.min(600L, Math.max(120L, text.words.size() * 4L));   // до 15 слов/мин
         try {
             while (recording && !closed && rec.samples() < maxSamples) {
-                int r = wavIn != null ? readWav(wavIn, s, chunk) : ar.read(s, 0, chunk); if (r <= 0) break;
+                int r = wavIn != null ? readWav(wavIn, s, chunk, rec.samples()) : ar.read(s, 0, chunk); if (r <= 0) break;
                 for (int i = 0; i < r; i++) f[i] = s[i] / 32768f;
                 rec.feed(f, r);
                 levels.add(r);
@@ -672,14 +672,26 @@ final class ReadingScreen {
         return android.text.TextUtils.join("-", w.syllables);
     }
 
-    /** Отладка: кусок PCM16 из файла в темпе живой речи. */
-    static int readWav(java.io.InputStream in, short[] s, int chunk) {
+    /** Начало подачи записи (отладка): темп держится по часам, как у микрофона, а не суммой пауз. */
+    long wavT0;
+
+    /**
+     * Отладка: кусок PCM16 из файла в темпе живой речи. Ждём до момента, когда микрофон отдал бы этот кусок
+     * (начало + уже поданные сэмплы): время распознавания не накапливается, как при паузе после каждого куска.
+     */
+    int readWav(java.io.InputStream in, short[] s, int chunk, long fed) {
+        if (fed == 0) wavT0 = SystemClock.elapsedRealtime();
+        long due = wavT0 + 1000L * fed / SR - SystemClock.elapsedRealtime();
+        if (due > 0) try { Thread.sleep(due); } catch (InterruptedException e) { return -1; }
+        return readWavChunk(in, s, chunk);
+    }
+
+    static int readWavChunk(java.io.InputStream in, short[] s, int chunk) {
         try {
             byte[] b = new byte[chunk * 2]; int got = 0;
             while (got < b.length) { int r = in.read(b, got, b.length - got); if (r < 0) break; got += r; }
             int n = got / 2;
             for (int i = 0; i < n; i++) s[i] = (short) ((b[2 * i] & 0xff) | (b[2 * i + 1] << 8));
-            Thread.sleep(1000L * n / SR);
             return n;
         } catch (Exception e) { return -1; }
     }
