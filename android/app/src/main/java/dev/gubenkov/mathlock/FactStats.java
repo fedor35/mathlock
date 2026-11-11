@@ -22,6 +22,10 @@ import java.util.Random;
  */
 public final class FactStats {
     public static final int MAX_BOX = 5;
+    /** С этой коробки пример «выучен» для ребёнка (сетка «Моя таблица»): три быстрых верных ответа подряд. */
+    public static final int LEARNED = 3;
+    /** Пары 2…9 без порядка — столько клеток собирает ребёнок. */
+    public static final int TOTAL = 36;
     /** Быстрый ответ — выучено «наизусть»; медленнее — считает в уме или подсматривает. */
     public static final long FAST_MS = 5_000;
     static final float[] BOX_WEIGHT = {8f, 5f, 3f, 2f, 1f, 0.5f};
@@ -43,8 +47,27 @@ public final class FactStats {
 
     public Fact get(int a, int b) { return facts.get(key(a, b)); }
 
-    /** Записать ответ. @param ms сколько думал (с показа до «✓»). */
-    public void record(int a, int b, boolean ok, long ms, long now) {
+    public boolean learned(int a, int b) { Fact f = get(a, b); return f != null && f.box >= LEARNED; }
+
+    /** Сколько пар 2…9 сейчас выучено. */
+    public int learnedCount() {
+        int n = 0;
+        for (int a = 2; a <= 9; a++) for (int b = a; b <= 9; b++) if (learned(a, b)) n++;
+        return n;
+    }
+
+    /** Все примеры на {@code k} (k×2…k×9) выучены. */
+    public boolean rowLearned(int k) {
+        for (int b = 2; b <= 9; b++) if (!learned(k, b)) return false;
+        return true;
+    }
+
+    /**
+     * Записать ответ. @param ms сколько думал (с показа до «✓»).
+     * @return пример только что стал выученным (для поздравления «⭐ Выучен пример»)
+     */
+    public boolean record(int a, int b, boolean ok, long ms, long now) {
+        boolean was = learned(a, b);
         Fact f = facts.get(key(a, b));
         if (f == null) { f = new Fact(); facts.put(key(a, b), f); }
         f.n++;
@@ -57,6 +80,18 @@ public final class FactStats {
             else if (f.box > 2) f.box--;   // забылось: отвечал быстро, теперь долго считает
         }
         save();
+        return !was && f.box >= LEARNED && a >= 2 && a <= 9 && b >= 2 && b <= 9;
+    }
+
+    /**
+     * Каждый ответ с введённым числом — во внешний answers.tsv (время, a, b, ответ, верно, мс): «42» на 6×8 —
+     * путает с 6×7, «47» — ошибка счёта; коробки этого не хранят.
+     */
+    public void logAnswer(int a, int b, int given, boolean ok, long ms, long now) {
+        if (mirror == null) return;
+        try (FileOutputStream o = new FileOutputStream(new File(mirror.getParentFile(), "answers.tsv"), true)) {
+            o.write(String.format(Locale.ROOT, "%d\t%d\t%d\t%d\t%d\t%d\n", now, a, b, given, ok ? 1 : 0, ms).getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) { }
     }
 
     float weight(int a, int b) {

@@ -33,6 +33,12 @@ for n, line in enumerate(open(sys.argv[1], encoding='utf-8'), 1):
     if lv >= 6 and re.search(r'[:;]\s*[:;]|\s[.,!?:;]', o['text']): errs.append(f"{o['id']}: пробел перед знаком")
     if 2 <= lv <= 5 and not 1 <= len(o['new_words']) <= 2: errs.append(f"{o['id']}: new_words")
     if lv >= 6 and not 0 <= len(o['new_words']) <= 3: errs.append(f"{o['id']}: new_words")
+    if 'quiz' in o:
+        q = o['quiz']   # без ударений: показывается после чтения, уровни L6+ ударений не показывают
+        if not ALLOWED.match(q['q']): errs.append(f"{o['id']}: quiz chars {q['q']!r}")
+        if len(q['options']) != 3 or len(set(q['options'])) != 3: errs.append(f"{o['id']}: quiz options")
+        for x in q['options']:
+            if not ALLOWED.match(x): errs.append(f"{o['id']}: quiz chars {x!r}")
     for w in o['new_words']:
         chk(o['id'] + ' nw', w['word']); chk(o['id'] + ' ex', w['explain'])
 print(dict(sorted(cnt.items())))

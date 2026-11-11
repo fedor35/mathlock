@@ -69,6 +69,8 @@ public final class ReadingMatcher {
      * оба штрафуются, «ещё» краснело, и чтение вставало.
      */
     static final float INS_OPEN = 0.001f;
+    /** Сверх скольких лишних букв (и половины длины слова) кусок речи слова считается растянутым. */
+    static final int STRETCH_MIN = Integer.getInteger("stretch.min", 4);
     /** Сколько букв речи после короткого красного слова искать его повтор отдельным словом. */
     static final int LATER_WINDOW_SHORT = 60;
     /** Сколько букв речи после слова просматривать в поисках его исправленного прочтения. */
@@ -186,6 +188,17 @@ public final class ReadingMatcher {
             boolean ok = (norm <= wordTolerance && !(strictEndings && endErr[w])) || (forgiveShortWords && len <= 2 && (!hasVowel(L, wd.letters) || hf[w] >= 0) && cost[w] <= DEL_END && w + 1 < progress);
             st[w] = ok ? State.OK : State.WRONG;
             if (!ok) all = false;
+        }
+        // Слово, набранное по буквам из длинного куска речи («звонкие» из «…апрель апреле не читается покажи… весеннее»,
+        // сын 07.11; «казахстана» из звука игры): длинные вставки внутри слова бесплатны, и буквы находятся вразброс.
+        // Растянутое слово засчитываем, только если внутри его куска оно сказано подряд (повторы «цеплялись… цеплялися» —
+        // да). На эталонной озвучке растянутых засчитанных слов нет вовсе.
+        boolean[] none = new boolean[m];
+        for (int w = 0; w < W; w++) {
+            if (st[w] != State.OK || hf[w] < 0 || prevOk(prev, w)) continue;
+            String wl = text.words.get(w).letters.replace("-", "");
+            if (wl.length() < 3 || hl[w] - hf[w] + 1 - wl.length() <= Math.max(STRETCH_MIN, wl.length() / 2)) continue;
+            if (laterReading(L, wl, h.substring(0, hl[w] + 1), hf[w], none) / wl.length() > wordTolerance) { st[w] = State.WRONG; all = false; }
         }
         // по звуку: буквы слова в кадрах есть, жадный путь их потерял
         if (acoustic != null)
