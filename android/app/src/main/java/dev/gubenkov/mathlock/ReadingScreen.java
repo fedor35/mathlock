@@ -61,6 +61,7 @@ import dev.gubenkov.reading.Sounds;
 import dev.gubenkov.reading.SpeakerId;
 import dev.gubenkov.reading.SpeakerModel;
 import dev.gubenkov.reading.StreamingRecognizer;
+import dev.gubenkov.reading.WordScore;
 
 /**
  * Задание «прочитай текст вслух» на экране блокировки (внутри QuizActivity, по образцу ReadActivity стенда readbench,
@@ -83,6 +84,8 @@ final class ReadingScreen {
     static final int SR = 16000;
     /** После конца текста (или в перечитывании) — столько тишины без новых букв, и запись останавливается сама. */
     static final long AUTO_STOP_MS = 2500;
+    /** Молчание, после которого последнее слово без одной буквы судим сразу ({@link ReadingMatcher#closeLast}). */
+    static final long QUIET_MS = 2000;
 
     // тёмная палитра экрана блокировки (как у примеров) + цвета подсветки стенда
     static final int BG = 0xFF1B2430, CARD = 0xFF26323F, TEXT = 0xFFF0EEE6, DIM = 0xFF9FB3C8, ACCENT = 0xFF5B8DEF,
@@ -550,6 +553,10 @@ final class ReadingScreen {
                 if (now - lastDecode >= 400 && rec.samples() > SR / 2) {
                     lastDecode = now;
                     hyp = rec.decode();
+                    int len = hyp.replace(" ", "").length();
+                    if (len != lastLen) { lastLen = len; lastChange = now; }
+                    matcher.acoustic = new WordScore(rec.logits(), rec.letterFrames, model.vocab, model.blank);
+                    matcher.closeLast = len > 0 && now - lastChange > QUIET_MS;
                     ReadingMatcher.Result raw = matcher.match(text, hyp, false, prev);
                     int fw = ReadingMatcher.firstWrong(raw, released); boolean rel = false;
                     if (fw >= 0 && raw.progressWords > fw + 1 + RELEASE_WORDS) {
@@ -561,8 +568,6 @@ final class ReadingScreen {
                     if (sw >= 0 && stopWord < 0) h.post(() -> { status.setTextColor(HINT); status.setText("Стоп! Прочитай красное слово ещё раз"); });
                     if (sw < 0 && stopWord >= 0 && !rel) h.post(() -> { status.setTextColor(DIM); status.setText("Верно! Читай дальше"); });
                     stopWord = sw;
-                    int len = hyp.replace(" ", "").length();
-                    if (len != lastLen) { lastLen = len; lastChange = now; }
                     h.post(() -> { if (!closed) { lastResult = res; render(); } });
                     if (res.complete) { done = true; break; }
                     // дочитал до конца (или перечитал, что хотел) и молчит — заканчиваем сами
@@ -582,6 +587,8 @@ final class ReadingScreen {
             return;
         }
         try { hyp = rec.decode(); } catch (Throwable ignored) { }
+        matcher.acoustic = new WordScore(rec.logits(), rec.letterFrames, model.vocab, model.blank);
+        matcher.closeLast = false;
         stopWord = -1;
         final ReadingMatcher.Result fin = ReadingMatcher.gate(matcher.match(text, hyp, true, prev), released);
         final ReadingMatcher.Result live = ReadingMatcher.gate(matcher.match(text, hyp, false, prev), released);
@@ -591,8 +598,11 @@ final class ReadingScreen {
         ReadingStats byWords = ReadingStats.of(fin, live, null, StreamingRecognizer.FRAME_SEC);
         ReadingStats byTime = ReadingStats.of(matcher.match(text, hyp, true, prev), lfs, StreamingRecognizer.FRAME_SEC);
         final ReadingStats stats = new ReadingStats(byWords.words, byWords.ok, byWords.wrong, byWords.reached, byTime.seconds);
-        // пустое нажатие или разговор мимо текста — тихо забываем, экран как был
-        boolean junk = hyp.replace(" ", "").length() < 3 || (prev == null && live.progressWords == 0);
+        // пустое нажатие или разговор мимо текста — тихо забываем, экран как был. Первая запись без единого верного
+        // слова тоже: три тычка в микрофон за 2 с (сын, 10.11: «не трога», «афену») оставляли красным первое слово,
+        // и следующее чтение начиналось с «Прочитай красные слова».
+        boolean noneOk = true; for (ReadingMatcher.State x : live.states) if (x == ReadingMatcher.State.OK) noneOk = false;
+        boolean junk = hyp.replace(" ", "").length() < 3 || (prev == null && (live.progressWords == 0 || noneOk));
         if (junk && !done) {
             h.post(() -> { if (closed) return; lastResult = before; repairing = false; setListening(false); render(); status.setText("Не расслышал. Нажми и читай вслух"); });
             return;

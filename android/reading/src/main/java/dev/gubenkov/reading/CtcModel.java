@@ -24,8 +24,8 @@ public final class CtcModel implements AutoCloseable {
     private final boolean staticT;
     public final int frames; // фиксированное T для статической модели, 0 — динамическая
     public final Backend backend;
-    private final String[] vocab;
-    private final int blank;
+    public final String[] vocab;
+    public final int blank;
 
     /** cacheDir — куда класть скомпилированный контекст QNN (первый запуск долгий, потом быстрый). */
     public CtcModel(String path, Backend backend, int staticFrames, String cacheDir) throws OrtException {

@@ -22,6 +22,16 @@ public final class ReadingMatcher {
      * Не ошибка: лишние буквы — начало следующего слова (запинка «Тимур по… пошёл») или повтор хвоста; пропуск «й».
      */
     public boolean strictEndings = false;
+    /**
+     * Второе мнение по звуку для красных слов (null — только буквы). Ставит вызывающий после каждого decode():
+     * оценка опирается на кадры букв этой гипотезы.
+     */
+    public WordScore acoustic;
+    /**
+     * Поток молчит: слово, у которого не хватает только последней буквы, судим сразу. Без этого «поду» вместо
+     * «подул» (сын, 10.11) висит «ещё читается» — ребёнок повторяет слово и не видит ни зелёного, ни красного.
+     */
+    public boolean closeLast = false;
 
     public enum State { PENDING, OK, WRONG }
 
@@ -46,6 +56,14 @@ public final class ReadingMatcher {
 
     /** Длинная вставка — возврат назад и перечитывание или «э-э-э»: слово перед ней не штрафуется. */
     static final int MAX_CHARGED_INS = 3;
+    /**
+     * Надбавка за начало вставки: из выравниваний одной цены берём то, где лишние буквы идут одним куском.
+     * Без неё «ещё в темно в темноте» (сын, 08.11) делилось на «ещ[евт]е[мно]» — два коротких куска внутри «ещё»,
+     * оба штрафуются, «ещё» краснело, и чтение вставало.
+     */
+    static final float INS_OPEN = 0.001f;
+    /** Сколько букв речи после короткого красного слова искать его повтор отдельным словом. */
+    static final int LATER_WINDOW_SHORT = 60;
     /** Сколько букв речи после слова просматривать в поисках его исправленного прочтения. */
     static final int LATER_WINDOW = 150;
 
@@ -74,44 +92,68 @@ public final class ReadingMatcher {
         for (char c : hypothesis.toCharArray()) { char x = L.normalize(c); if (x != 0) { gap[hb.length()] = sp; hb.append(x); sp = false; } else if (c == ' ') sp = true; }
         String h = hb.toString();
         int m = h.length();
-        // D[i][j]: стоимость выравнивания t[0..i) c h[0..j)
-        float[][] D = new float[n + 1][m + 1];
-        byte[][] B = new byte[n + 1][m + 1]; // 0 diag, 1 del (пропуск буквы текста), 2 ins (лишняя буква)
-        for (int i = 1; i <= n; i++) { D[i][0] = D[i - 1][0] + del[i - 1]; B[i][0] = 1; }
-        for (int j = 1; j <= m; j++) { D[0][j] = D[0][j - 1] + INS; B[0][j] = 2; }
-        for (int i = 1; i <= n; i++) for (int j = 1; j <= m; j++) {
-            float d = D[i - 1][j - 1] + sub(L, t.charAt(i - 1), h.charAt(j - 1)), dl = D[i - 1][j] + del[i - 1], in = D[i][j - 1] + INS;
-            if (d <= dl && d <= in) { D[i][j] = d; B[i][j] = 0; } else if (dl <= in) { D[i][j] = dl; B[i][j] = 1; } else { D[i][j] = in; B[i][j] = 2; }
+        // Выравнивание t[0..i) с h[0..j) с отдельной ценой начала вставки (Gotoh): X — последний шаг буква текста
+        // (совпадение/замена или пропуск), Y — лишняя буква речи. Строки X/Y храним две, указатели — все:
+        // B: бит 0 — X пришёл пропуском (иначе по диагонали), бит 1 — X пришёл из Y, бит 2 — Y продолжает вставку.
+        final float INF = Float.MAX_VALUE / 4;
+        float[] xp = new float[m + 1], yp = new float[m + 1], xc = new float[m + 1], yc = new float[m + 1];
+        float[] lastCol = new float[n + 1]; boolean[] lastY = new boolean[n + 1];
+        byte[][] B = new byte[n + 1][m + 1];
+        xp[0] = 0; yp[0] = INF;
+        for (int j = 1; j <= m; j++) { xp[j] = INF; yp[j] = j == 1 ? INS + INS_OPEN : yp[j - 1] + INS; B[0][j] = (byte) (j > 1 ? 4 : 0); }
+        lastCol[0] = Math.min(xp[m], yp[m]); lastY[0] = yp[m] < xp[m];
+        for (int i = 1; i <= n; i++) {
+            xc[0] = xp[0] + del[i - 1]; yc[0] = INF; B[i][0] = 1;
+            char tc = t.charAt(i - 1); float dc = del[i - 1];
+            for (int j = 1; j <= m; j++) {
+                boolean dY = yp[j - 1] < xp[j - 1], lY = yp[j] < xp[j];
+                float d = (dY ? yp[j - 1] : xp[j - 1]) + sub(L, tc, h.charAt(j - 1)), dl = (lY ? yp[j] : xp[j]) + dc;
+                byte b;
+                if (d <= dl) { xc[j] = d; b = (byte) (dY ? 2 : 0); } else { xc[j] = dl; b = (byte) (1 | (lY ? 2 : 0)); }
+                float open = xc[j - 1] + INS + INS_OPEN, ext = yc[j - 1] + INS;
+                if (ext <= open) { yc[j] = ext; b |= 4; } else yc[j] = open;
+                B[i][j] = b;
+            }
+            lastCol[i] = Math.min(xc[m], yc[m]); lastY[i] = yc[m] < xc[m];
+            float[] q = xp; xp = xc; xc = q; q = yp; yp = yc; yc = q;
         }
         // конец гипотезы может прийтись на любое место текста (хвост ещё не прочитан)
         int bi = n;
         if (!finalPass) {
             float best = Float.MAX_VALUE;
-            for (int i = 0; i <= n; i++) { float c = D[i][m] + 0.02f * (n - i); if (c < best) { best = c; bi = i; } }
+            for (int i = 0; i <= n; i++) { float c = lastCol[i] + 0.02f * (n - i); if (c < best) { best = c; bi = i; } }
+        }
+        // слово, на середине которого оборвался поток, ещё не прочитано — если поток не молчит (closeLast)
+        boolean partial = !finalPass && bi > 0 && bi < n && wordOf[bi] == wordOf[bi - 1], closedLast = false;
+        // молчание посреди слова — обычно чтение по слогам («при… цесса»), закрываем, только если не хватает одной буквы
+        if (partial && closeLast && (bi + 1 == n || wordOf[bi + 1] != wordOf[bi]) && wordLen(wordOf, n, bi) >= 4) {
+            bi++; partial = false; closedLast = true;
         }
         float[] cost = new float[W];
         boolean[] endErr = new boolean[W];
         int[] hf = new int[W], hl = new int[W];
         java.util.Arrays.fill(hf, -1); java.util.Arrays.fill(hl, -1);
         int[] own = new int[m]; java.util.Arrays.fill(own, -1);   // буква речи → слово текста (только совпавшие по диагонали)
-        int i = bi, j = m;
+        int i = bi, j = m; boolean inY = lastY[bi];
         while (i > 0 || j > 0) {
             byte b = B[i][j];
-            if (i > 0 && j > 0 && b == 0) {
+            if (!inY && i > 0 && j > 0 && (b & 1) == 0) {
+                inY = (b & 2) != 0;
                 int w = wordOf[i - 1]; cost[w] += sub(L, t.charAt(i - 1), h.charAt(j - 1));
                 // замена в окончании; похожие гласные (о/а, е/и, е/я, и/ы) — аканье и иканье, не ошибка: «лото» звучит «лота»
                 if (t.charAt(i - 1) != h.charAt(j - 1) && L.similar(t.charAt(i - 1), h.charAt(j - 1)) >= 1f && inEnding(wordOf, n, i - 1)
                         && endingLetter(L, t.charAt(i - 1)) && endingLetter(L, h.charAt(j - 1))) endErr[w] = true;
                 own[j - 1] = w; hf[w] = j - 1; if (hl[w] < 0) hl[w] = j - 1; i--; j--;
             }
-            else if (i > 0 && (j == 0 || b == 1)) {
+            else if (!inY) {
+                inY = (b & 2) != 0;
                 cost[wordOf[i - 1]] += del[i - 1];
                 if (isLast(wordOf, n, i - 1) && L.isVowel(t.charAt(i - 1)) && del[i - 1] > 0 && wordLen(wordOf, n, i - 1) >= 3) endErr[wordOf[i - 1]] = true;
                 i--;
             }
             else { // вставку относим к слову перед ней; длинную (перечитывание, «э-э-э») не штрафуем и в слово не включаем
                 int run = 0, j0 = j;
-                while (j > 0 && (i == 0 || B[i][j] == 2)) { j--; run++; }
+                while (inY) { inY = (B[i][j] & 4) != 0; j--; run++; }
                 if (i > 0 && run <= MAX_CHARGED_INS) {
                     int w = wordOf[i - 1]; cost[w] += INS * 0.5f * run; hf[w] = j; if (hl[w] < 0) hl[w] = j0 - 1;
                     // вставка сразу за последней буквой слова: «жил|и», «звёзд|ы» — окончание; «Тимур|по» (начало следующего) и «похожа|а» (повтор) — нет
@@ -127,8 +169,6 @@ public final class ReadingMatcher {
             }
         }
         int progress = bi == 0 ? 0 : wordOf[bi - 1] + 1;
-        // слово, на середине которого оборвался поток, ещё не прочитано
-        boolean partial = !finalPass && bi > 0 && bi < n && wordOf[bi] == wordOf[bi - 1];
         State[] st = new State[W];
         boolean all = true;
         for (int w = 0; w < W; w++) {
@@ -140,6 +180,14 @@ public final class ReadingMatcher {
             st[w] = ok ? State.OK : State.WRONG;
             if (!ok) all = false;
         }
+        // по звуку: буквы слова в кадрах есть, жадный путь их потерял
+        if (acoustic != null)
+            for (int w = 0; w < W; w++) {
+                // только «по буквам не то»: строгие окончания звук не отменяет — безударный слог он не различит
+                if (st[w] != State.WRONG || hf[w] < 0 || cost[w] / Math.max(1, text.words.get(w).letters.replace("-", "").length()) <= wordTolerance) continue;
+                float s = acoustic.score(text.words.get(w).letters.replace("-", ""), hf[w], hl[w]);
+                if (s >= WordScore.ACCEPT) st[w] = State.OK;
+            }
         // Исправление после ушедшего вперёд чтения: «в аптеки по улице побежали … апреле апреле» (сын, 07.11) —
         // ребёнок дочитал дальше и вернулся к красному слову. Монотонное выравнивание отдаёт слову только
         // первую попытку, поэтому ищем верное прочтение слова дальше в гипотезе. Слова от 4 букв: короткие
@@ -153,16 +201,21 @@ public final class ReadingMatcher {
             if (st[w] != State.WRONG) continue;
             if ((w > 0 && orig[w - 1] != State.OK) || (w + 1 < W && w + 1 < progress && orig[w + 1] != State.OK)) continue;
             String wl = text.words.get(w).letters.replace("-", "");
-            if (wl.length() < 4) continue;
             int from = hl[w] >= 0 ? hl[w] + 1 : w > 0 && hl[w - 1] >= 0 ? hl[w - 1] + 1 : 0;
+            if (wl.length() < 4) {
+                // короткое слово засчитываем, только если его сказали отдельным словом: «у… у у», «ещё ещё», «ток ток»
+                // (сын, 08–09.11: после «Стоп!» повторял слово по 5–7 раз, а оно оставалось красным)
+                if (laterToken(L, wl, h, gap, from, Math.min(m, from + LATER_WINDOW_SHORT), taken, wordTolerance)) st[w] = State.OK;
+                continue;
+            }
             int to = Math.min(m, from + LATER_WINDOW + wl.length());
             float best = laterReading(L, wl, h.substring(0, to), from, taken);
             if (best / wl.length() <= wordTolerance) { st[w] = State.OK; cost[w] = best; }
         }
         all = true;
         for (int w = 0; w < W; w++) if (st[w] != State.OK) all = false;
-        // последнее слово в потоке засчитываем, только когда оно целиком прочитано
-        if (!finalPass && progress > 0 && progress <= W) {
+        // последнее слово в потоке засчитываем, только когда оно целиком прочитано (или поток молчит)
+        if (!finalPass && !(closeLast && closedLast) && progress > 0 && progress <= W) {
             int last = progress - 1;
             if (st[last] == State.WRONG) st[last] = State.PENDING;
         }
@@ -197,6 +250,20 @@ public final class ReadingMatcher {
         float best = Float.MAX_VALUE;
         for (int j = 0; j <= m; j++) best = Math.min(best, prevRow[j]);
         return best;
+    }
+
+    /** Отдельное слово речи (между пробелами CTC) в h[from..to), совпадающее с {@code w}, из незанятых букв. */
+    static boolean laterToken(LanguageSpec L, String w, String h, boolean[] gap, int from, int to, boolean[] taken, float tol) {
+        int len = w.length();
+        for (int k = from; k + len <= to; k++) {
+            if (k > 0 && !gap[k]) continue;
+            int e = k + 1; while (e < h.length() && !gap[e]) e++;
+            if (e - k != len) continue;
+            float c = 0; boolean free = true;
+            for (int q = 0; q < len; q++) { c += sub(L, w.charAt(q), h.charAt(k + q)); free &= !taken[k + q]; }
+            if (free && c / len <= tol) return true;
+        }
+        return false;
     }
 
     // ---------- «Красное — сразу перечитать» (Фёдор, 07.11) ----------
