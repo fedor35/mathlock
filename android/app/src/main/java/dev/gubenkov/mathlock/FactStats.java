@@ -33,6 +33,8 @@ public final class FactStats {
     }
 
     private final File file;
+    /** Копия журнала во внешних files/ (Android/data, как журналы чтения): родитель забирает её adb pull — внутренние файлы релизной сборки недоступны. */
+    public File mirror;
     private final Map<String, Fact> facts = new HashMap<>();
 
     public FactStats(File file) { this.file = file; load(); }
@@ -111,5 +113,15 @@ public final class FactStats {
         try (FileOutputStream o = new FileOutputStream(tmp)) { o.write(sb.toString().getBytes(StandardCharsets.UTF_8)); }
         catch (Exception e) { return; }
         tmp.renameTo(file);
+        if (mirror != null) try (FileOutputStream o = new FileOutputStream(mirror)) { o.write(sb.toString().getBytes(StandardCharsets.UTF_8)); } catch (Exception ignored) { }
+    }
+
+    /** Копия журнала во внешние files/ (при старте службы — чтобы копия была и без новых ответов). */
+    static void exportCopy(android.content.Context c) {
+        File src = new File(c.getFilesDir(), "facts.tsv"), dir = c.getExternalFilesDir(null);
+        if (!src.exists() || dir == null) return;
+        try (java.io.InputStream in = new FileInputStream(src); FileOutputStream o = new FileOutputStream(new File(dir, "facts.tsv"))) {
+            byte[] b = new byte[8192]; int r; while ((r = in.read(b)) > 0) o.write(b, 0, r);
+        } catch (Exception ignored) { }
     }
 }
