@@ -48,6 +48,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         super.onCreate(b);
         prefs = new Prefs(this);
         facts = new FactStats(new java.io.File(getFilesDir(), "facts.tsv"));
+        java.io.File ext = getExternalFilesDir(null); if (ext != null) facts.mirror = new java.io.File(ext, "facts.tsv");
         setShowWhenLocked(true);
         // Экран примеры сами НЕ включают: их показывают, когда экран уже зажгли
         // кнопкой (SCREEN_ON). С turnScreenOn блокировка кнопкой тут же снова

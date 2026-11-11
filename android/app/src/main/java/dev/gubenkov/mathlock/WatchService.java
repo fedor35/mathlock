@@ -18,6 +18,7 @@ public class WatchService extends AccessibilityService {
      */
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
+        FactStats.exportCopy(this);
         Prefs p = new Prefs(this);
         if (!p.enabled()) return;
         if (!LockService.running) {
