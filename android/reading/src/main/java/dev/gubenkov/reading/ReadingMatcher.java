@@ -6,6 +6,13 @@ package dev.gubenkov.reading;
  * (повторы слогов, «э-э») и бесплатным непрочитанным хвостом текста (потоковая подсветка).
  */
 public final class ReadingMatcher {
+    /**
+     * Пропуск конечной «л» после гласной: «аул» → «ау», «подул» → «поду», «саксаул», «звенел», «спал» (сын, 07–10.11).
+     * Твёрдая «л» в конце после гласной звучит почти как «у», и жадный декодер её теряет: на записях сына конечная
+     * «л» пропала в 8% слов (после «е» — 16%), в середине слова — тоже 8%; по звуку (WordScore) её нет (−3,6),
+     * так что это не проглатывание, а слабый звук. Цена пропуска 0,5 — трёхбуквенное слово ещё засчитывается.
+     */
+    public static final float DEL_SOFT_L = 0.5f;
     public static final float INS = 0.35f, DEL = 1f, DEL_END = 1.6f, SUB = 1f, SUB_SIMILAR = 0.4f;
     /** Слово засчитано, если доля ошибок ≤ этого (по длине слова); короткие предлоги прощаем отдельно. */
     public float wordTolerance = 0.25f;
@@ -85,7 +92,7 @@ public final class ReadingMatcher {
         // пропуск последней буквы слова (окончание: купила→купил, шары→шар) — дороже обычного
         float[] del = new float[n];
         // конечная «й» в быстрой речи глотается («дымко[й]», «ровно[й]» у взрослого, 04.11) — обычная цена пропуска
-        for (int k = 0; k < n; k++) del[k] = prevOk(prev, wordOf[k]) ? 0f : (k + 1 == n || wordOf[k + 1] != wordOf[k]) && t.charAt(k) != 'й' ? DEL_END : DEL;
+        for (int k = 0; k < n; k++) del[k] = prevOk(prev, wordOf[k]) ? 0f : softEnd(L, t, wordOf, n, k) ? DEL_SOFT_L : (k + 1 == n || wordOf[k + 1] != wordOf[k]) && t.charAt(k) != 'й' ? DEL_END : DEL;
         StringBuilder hb = new StringBuilder();
         // gap[j]: перед буквой j гипотезы был пробел (CTC отделил слово) — вставка после пробела не «окончание», а заминка/следующее слово
         boolean[] gap = new boolean[hypothesis.length() + 1]; boolean sp = false;
@@ -126,7 +133,7 @@ public final class ReadingMatcher {
         // слово, на середине которого оборвался поток, ещё не прочитано — если поток не молчит (closeLast)
         boolean partial = !finalPass && bi > 0 && bi < n && wordOf[bi] == wordOf[bi - 1], closedLast = false;
         // молчание посреди слова — обычно чтение по слогам («при… цесса»), закрываем, только если не хватает одной буквы
-        if (partial && closeLast && (bi + 1 == n || wordOf[bi + 1] != wordOf[bi]) && wordLen(wordOf, n, bi) >= 4) {
+        if (partial && closeLast && (bi + 1 == n || wordOf[bi + 1] != wordOf[bi]) && (wordLen(wordOf, n, bi) >= 4 || softEnd(L, t, wordOf, n, bi))) {
             bi++; partial = false; closedLast = true;
         }
         float[] cost = new float[W];
@@ -294,6 +301,11 @@ public final class ReadingMatcher {
     static int wordLen(int[] wordOf, int n, int k) { int a = k, b = k; while (a > 0 && wordOf[a - 1] == wordOf[k]) a--; while (b + 1 < n && wordOf[b + 1] == wordOf[k]) b++; return b - a + 1; }
     /** Позиция k — среди двух последних букв слова длиной от 3. */
     static boolean inEnding(int[] wordOf, int n, int k) { int len = wordLen(wordOf, n, k); return len >= 3 && (isLast(wordOf, n, k) || isLast(wordOf, n, k + 1)); }
+
+    /** Буква k — конечная «л» после гласной в слове от 3 букв. */
+    static boolean softEnd(LanguageSpec L, String t, int[] wordOf, int n, int k) {
+        return t.charAt(k) == 'л' && isLast(wordOf, n, k) && k > 0 && wordOf[k - 1] == wordOf[k] && L.isVowel(t.charAt(k - 1)) && wordLen(wordOf, n, k) >= 3;
+    }
 
     static boolean hasVowel(LanguageSpec L, String s) { for (int i = 0; i < s.length(); i++) if (L.isVowel(s.charAt(i))) return true; return false; }
 

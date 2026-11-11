@@ -133,6 +133,14 @@ final class ReadingScreen {
     /** Только отладочная сборка: запись вместо микрофона (в реальном темпе) и текст по id — проверка на живых записях. */
     String debugWav, debugTextId;
     int fails;
+    /**
+     * Попытка текста, собранная по записям: с 0.4.1 чтение встаёт на красном, ребёнок жмёт «стоп» и дочитывает
+     * следующей записью — первая не дошла до 80%, вторая была перечитыванием, и текст в журнал не попадал
+     * (10.11 так прошли L7-043 и L6-045). Время записей складываем, пока не наберётся засчитываемая попытка.
+     */
+    float partSeconds;
+    /** Попытка этого текста уже в журнале — перечитывание красных её не повторяет. */
+    boolean partRecorded;
     boolean engineHeld;
     MediaPlayer player;
     int voiceIdx;
@@ -334,7 +342,7 @@ final class ReadingScreen {
         textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, n <= 10 ? 36 : n <= 45 ? 28 : n <= 90 ? 22 : 19);
         textView.setGravity((n <= 45 ? Gravity.CENTER_VERTICAL : Gravity.TOP) | Gravity.START);
         listenBtn.setVisibility(refFiles().length > 0 ? View.VISIBLE : View.INVISIBLE);
-        lastResult = null;
+        lastResult = null; partSeconds = 0; partRecorded = false;
         render();
     }
 
@@ -570,7 +578,10 @@ final class ReadingScreen {
                     }
                     final ReadingMatcher.Result res = ReadingMatcher.gate(raw, released);
                     int sw = ReadingMatcher.firstWrong(res, released);
-                    if (sw >= 0 && stopWord < 0) h.post(() -> { status.setTextColor(HINT); status.setText("Стоп! Прочитай красное слово ещё раз"); });
+                    // слово по слогам в подсказке: сын на записи — «дочитай красное, я не знаю»; слоги помогают разобрать
+                    // слово, не подсказывая его голосом
+                    if (sw >= 0 && sw != stopWord) { final String syl = bySyllables(text.words.get(sw));
+                        h.post(() -> { status.setTextColor(HINT); status.setText("Стоп! Прочитай красное слово ещё раз" + (syl.isEmpty() ? "" : "\nПо слогам: " + syl)); }); }
                     if (sw < 0 && stopWord >= 0 && !rel) h.post(() -> { status.setTextColor(DIM); status.setText("Верно! Читай дальше"); });
                     stopWord = sw;
                     h.post(() -> { if (!closed) { lastResult = res; render(); } });
@@ -636,8 +647,14 @@ final class ReadingScreen {
         try {
             SpeakerId.Decision d = identify(rec.audio());
             String base = save(textId, text, rec, hyp, fin, ok, d, levels);
-            // перечитывание красных — не новая попытка: темп и точность считаются по первому прочтению
-            if (prev == null) news = record(textId, level, chall, stats, d, base);
+            // перечитывание красных — не новая попытка; но текст, дочитанный в несколько записей, — одна попытка,
+            // время — сумма записей, верные слова — по сведённому итогу
+            if (prev == null) { partSeconds = 0; partRecorded = false; }
+            if (!partRecorded) {
+                ReadingStats all = new ReadingStats(stats.words, stats.ok, stats.wrong, stats.reached, partSeconds + stats.seconds);
+                if (all.counts()) { news = record(textId, level, chall, all, d, base); partRecorded = true; }
+                else partSeconds = all.seconds;
+            }
         } catch (Throwable e) { Log.e(TAG, "журнал чтения", e); }
         final String n = news;
         h.post(() -> {
@@ -646,6 +663,12 @@ final class ReadingScreen {
             showLevel();
             if (ok) h.postDelayed(() -> { if (!closed) host.onReadingPassed(); }, n.contains("🏅") ? 3800 : 2400);
         });
+    }
+
+    /** «ра-ке-та»; односложное слово — пусто (делить нечего). */
+    static String bySyllables(ReadingText.Word w) {
+        if (w.syllables.size() < 2) return "";
+        return android.text.TextUtils.join("-", w.syllables);
     }
 
     /** Отладка: кусок PCM16 из файла в темпе живой речи. */

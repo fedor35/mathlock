@@ -43,18 +43,18 @@ public class LiveFixesTest {
         assertEquals(WRONG, r.states[2]);
     }
 
-    /** «поду» вместо «подул» и молчание: слово судим (красное), а не «ещё читается». */
+    /** «кула» вместо «кулак» и молчание: слово судим (красное), а не «ещё читается». («поду» вместо «подул» с 0.4.5 засчитывается — слабая «л».) */
     @Test public void quietStreamJudgesWordMissingLastLetter() {
         ReadingText t = new ReadingText("Он положи́л моне́тку в кула́к, поду́л на него́.");
         ReadingMatcher m = new ReadingMatcher();
-        ReadingMatcher.Result r = m.match(t, "он положил монетку в кулак поду", false, null);
-        assertEquals(PENDING, r.states[5]);
+        ReadingMatcher.Result r = m.match(t, "он положил монетку в кула", false, null);
+        assertEquals(PENDING, r.states[4]);
         m.closeLast = true;
-        r = m.match(t, "он положил монетку в кулак поду", false, null);
-        assertEquals(WRONG, r.states[5]);
-        // по слогам «по… ду…» (не хватает двух букв и больше) — ждём дальше
-        r = m.match(t, "он положил монетку в кулак по", false, null);
-        assertEquals(PENDING, r.states[5]);
+        r = m.match(t, "он положил монетку в кула", false, null);
+        assertEquals(WRONG, r.states[4]);
+        // по слогам «ку… ла…» (не хватает двух букв и больше) — ждём дальше
+        r = m.match(t, "он положил монетку в ку", false, null);
+        assertEquals(PENDING, r.states[4]);
     }
 
     /** Буква, которую жадный путь потерял, но вероятность у неё почти как у лучшего: слово засчитано по звуку. */
@@ -81,4 +81,22 @@ public class LiveFixesTest {
     }
 
     static int idx(String[] v, String u) { for (int i = 0; i < v.length; i++) if (v[i].equals(u)) return i; return -1; }
+
+    /** Конечная «л» после гласной слабая — её пропуск не красит слово: «аул» → «ау», «подул» → «поду». */
+    @Test public void weakFinalL() {
+        ReadingMatcher.Result r = shown("Мы прие́хали в аул. Там пасу́тся ло́шади.", "мы приехали в ау там пасутся");
+        assertEquals(OK, r.states[3]);
+        r = shown("Ве́тер поду́л, и лодка поплыла.", "ветер поду и лодка");
+        assertEquals(OK, r.states[1]);
+        // другая конечная согласная так не прощается: «ток» → «то»
+        r = shown("Всё э́то ток идёт по прово́дам.", "все это то идет по");
+        assertNotEquals(OK, r.states[2]);
+    }
+
+    /** Поток замолчал на «ау» — трёхбуквенное слово без конечной «л» судится сразу, не висит «ещё читается». */
+    @Test public void weakFinalLClosedOnSilence() {
+        ReadingMatcher m = new ReadingMatcher(); m.closeLast = true;
+        ReadingMatcher.Result r = m.match(new ReadingText("Мы прие́хали в аул. Там пасу́тся ло́шади."), "мы приехали в ау", false, null);
+        assertEquals(OK, r.states[3]);
+    }
 }

@@ -2,7 +2,7 @@ import json, re, sys, collections, unicodedata
 A = '́'; V = set('аеёиоуыэюяАЕЁИОУЫЭЮЯ')
 ALLOWED = re.compile(r'^[а-яёА-ЯЁ́ .,!?—:;]+$')
 errs = []; cnt = collections.Counter(); ids = set()
-WR = {3: (5, 8), 4: (15, 30), 5: (35, 60), 6: (50, 70), 7: (80, 110), 8: (120, 160), 9: (170, 230)}
+WR = {3: (5, 8), 4: (15, 30), 5: (35, 60), 6: (50, 90), 7: (80, 140), 8: (120, 200), 9: (170, 280)}
 def words(s): return re.findall(r'[а-яёА-ЯЁ́]+', s)
 def chk(where, s):
     if unicodedata.normalize('NFC', s.replace(A, '')) != s.replace(A, ''): errs.append(f'{where}: not NFC')
@@ -36,6 +36,6 @@ for n, line in enumerate(open(sys.argv[1], encoding='utf-8'), 1):
     for w in o['new_words']:
         chk(o['id'] + ' nw', w['word']); chk(o['id'] + ' ex', w['explain'])
 print(dict(sorted(cnt.items())))
-want = {1: 35, 2: 35, 3: 30, 4: 30, 5: 50, 6: 55, 7: 55, 8: 50, 9: 50}
+want = {1: 35, 2: 35, 3: 30, 4: 30, 5: 50, 6: 80, 7: 75, 8: 65, 9: 62}
 if dict(cnt) != want: errs.append(f'counts {dict(cnt)}')
 print('\n'.join(errs) or 'OK'); sys.exit(1 if errs else 0)
