@@ -5,3 +5,4 @@ android/local.properties
 android/.idea/
 *.apk
 android/app/reading-pack/
+__pycache__/
