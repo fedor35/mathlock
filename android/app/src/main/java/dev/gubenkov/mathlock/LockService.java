@@ -45,6 +45,58 @@ public class LockService extends Service {
         }
     };
 
+    // ---- дневной лимит (ScreenTime): счёт времени, пока экран горит и телефон открыт ----
+    static final long TICK_MS = 30_000L;
+    private long lastTick;
+    private final Runnable timeTick = new Runnable() {
+        @Override public void run() { accountTime(true); }
+    };
+
+    /** Учесть время с прошлого тика; time up — блокировка. @param again планировать следующий тик. */
+    private void accountTime(boolean again) {
+        h.removeCallbacks(timeTick);
+        Prefs p = new Prefs(this);
+        long now = SystemClock.elapsedRealtime();
+        long delta = lastTick == 0 ? 0 : now - lastTick;
+        lastTick = now;
+        if (!p.enabled() || !p.limitOn()) { updateNotification(p); return; }
+        ScreenTime.State st = p.timeState(); ScreenTime.Rules r = p.limitRules();
+        if (!p.locked()) ScreenTime.use(st, delta / 1000, 2 * TICK_MS / 1000);
+        int warn = ScreenTime.warnNow(st, r);
+        boolean up = ScreenTime.leftSec(st, r) <= 0;
+        if (up) ScreenTime.clampUsed(st, r);
+        p.saveTimeState(st);
+        if (warn != 0 && !p.locked()) {
+            String msg = warn == ScreenTime.WARN_1 ? "Осталась 1 минута! Потом можно заработать ещё" : "Осталось 5 минут телефона на сегодня";
+            android.widget.Toast.makeText(this, "⏰ " + msg, android.widget.Toast.LENGTH_LONG).show();
+        }
+        if (up && !p.locked() && screenOn(this)) {
+            Log.i(TAG, "дневное время вышло — блокировка");
+            p.setNeedNow(p.needCorrect()); p.setScreenOffAt(0); p.setLocked(true);
+            showQuiz(this);
+        }
+        updateNotification(p);
+        if (again && screenOn(this)) h.postDelayed(timeTick, TICK_MS);
+    }
+
+    private void updateNotification(Prefs p) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm != null) nm.notify(1, notification(p));
+    }
+
+    private Notification notification(Prefs p) {
+        PendingIntent pi = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
+        String title = "Таблица умножения включена";
+        if (p.enabled() && p.limitOn()) {
+            long left = p.timeLeftSec();
+            title = left > 0 ? "Осталось сегодня: " + ScreenTime.fmt(left) : "Время на сегодня вышло";
+        }
+        return new Notification.Builder(this, CH)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+                .setContentTitle(title)
+                .setContentIntent(pi).setOngoing(true).setOnlyAlertOnce(true).build();
+    }
+
     private void schedulePeriodic() {
         h.removeCallbacks(periodic);
         Prefs p = new Prefs(this);
@@ -57,12 +109,13 @@ public class LockService extends Service {
             String act = i.getAction();
             if (Intent.ACTION_SCREEN_OFF.equals(act)) {
                 h.removeCallbacks(periodic);
-                if (p.enabled() && p.freeLeftMs() == 0) {   // в бонусное время гашение экрана не блокирует
+                accountTime(false); lastTick = 0;
+                if (p.enabled() && (p.freeLeftMs() == 0 || p.timeUp())) {   // в бонусное время гашение экрана не блокирует
                     if (!p.locked()) { p.setScreenOffAt(SystemClock.elapsedRealtime()); p.setNeedNow(p.needCorrect()); }
                     p.setLocked(true);
                 }
             } else if (Intent.ACTION_SCREEN_ON.equals(act) || Intent.ACTION_USER_PRESENT.equals(act)) {
-                if (Intent.ACTION_SCREEN_ON.equals(act)) { schedulePeriodic(); AdbKeeper.start(c); }
+                if (Intent.ACTION_SCREEN_ON.equals(act)) { schedulePeriodic(); AdbKeeper.start(c); lastTick = SystemClock.elapsedRealtime(); accountTime(true); }
                 maybeShowQuiz(c);
             }
         }
@@ -72,7 +125,7 @@ public class LockService extends Service {
         Prefs p = new Prefs(c);
         if (!p.enabled() || !p.locked()) return;
         long off = p.screenOffAt();
-        if (off > 0 && SystemClock.elapsedRealtime() - off < p.graceSeconds() * 1000L) {
+        if (off > 0 && !p.timeUp() && SystemClock.elapsedRealtime() - off < p.graceSeconds() * 1000L) {
             Log.d(TAG, "grace period, unlock without quiz");
             p.setLocked(false);
             return;
@@ -95,6 +148,9 @@ public class LockService extends Service {
         try { c.startActivity(q); } catch (Exception e) { Log.w(TAG, "cannot start quiz", e); }
     }
 
+    /** Пересчитать остаток и уведомление (после заработка, разблокировки, смены настроек). */
+    public static void refresh(Context c) { if (running) start(c); }
+
     public static void start(Context c) {
         Intent i = new Intent(c, LockService.class);
         if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i); else c.startService(i);
@@ -108,11 +164,7 @@ public class LockService extends Service {
         VolumeGuard.start(this);
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CH, "Блокировка", NotificationManager.IMPORTANCE_MIN));
-        PendingIntent pi = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
-        Notification n = new Notification.Builder(this, CH)
-                .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-                .setContentTitle("Таблица умножения включена")
-                .setContentIntent(pi).setOngoing(true).build();
+        Notification n = notification(new Prefs(this));
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(1, n);
         IntentFilter f = new IntentFilter();
@@ -124,9 +176,13 @@ public class LockService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         // Вызывается и после «Сохранить» в настройках: перечитать интервал.
-        if (getSystemService(android.os.PowerManager.class).isInteractive()) schedulePeriodic();
+        if (getSystemService(android.os.PowerManager.class).isInteractive()) {
+            schedulePeriodic();
+            if (lastTick == 0) lastTick = SystemClock.elapsedRealtime();
+            accountTime(true);   // в т.ч. после разблокировки/заработка — сразу обновить остаток
+        }
         return START_STICKY;
     }
-    @Override public void onDestroy() { running = false; h.removeCallbacks(periodic); unregisterReceiver(screen); super.onDestroy(); }
+    @Override public void onDestroy() { running = false; h.removeCallbacks(periodic); h.removeCallbacks(timeTick); unregisterReceiver(screen); super.onDestroy(); }
     @Override public IBinder onBind(Intent intent) { return null; }
 }

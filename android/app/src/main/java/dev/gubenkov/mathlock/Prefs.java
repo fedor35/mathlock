@@ -109,4 +109,47 @@ public final class Prefs {
     /** NPU (QNN HTP) однажды уронил процесс или не загрузился — дальше только CPU, пока родитель не нажмёт «Подготовить». */
     public boolean htpBroken() { return sp.getBoolean("htp_broken", false); }
     public void setHtpBroken(boolean v) { sp.edit().putBoolean("htp_broken", v).commit(); }
+
+    // ---- дневной лимит экранного времени (0.5.0, ScreenTime) ----
+    public boolean limitOn() { return sp.getBoolean("limit_on", false); }
+    public int limitBaseMin() { return sp.getInt("limit_base", 90); }
+    public int limitEarnMaxMin() { return sp.getInt("limit_earn_max", 90); }
+    /** Награда за прочитанный текст, мин (за пример — bonusPerExampleMin). */
+    public int limitReadMin() { return sp.getInt("limit_read", 10); }
+    /** Сколько минут добавляет родительский код на экране «время вышло». */
+    public int limitParentMin() { return sp.getInt("limit_parent", 30); }
+    public int limitResetHour() { return sp.getInt("limit_reset_hour", 6); }
+    public void setLimit(boolean on, int base, int earnMax, int read, int parent, int resetHour) {
+        sp.edit().putBoolean("limit_on", on).putInt("limit_base", base).putInt("limit_earn_max", earnMax)
+                .putInt("limit_read", read).putInt("limit_parent", parent).putInt("limit_reset_hour", resetHour).apply();
+    }
+    public ScreenTime.Rules limitRules() { return new ScreenTime.Rules(limitBaseMin(), limitEarnMaxMin(), limitResetHour()); }
+
+    /** Состояние суток, уже переведённое на сегодня. */
+    public ScreenTime.State timeState() {
+        ScreenTime.State s = new ScreenTime.State();
+        s.day = sp.getInt("st_day", 0); s.usedSec = sp.getLong("st_used", 0); s.earnedMin = sp.getInt("st_earned", 0);
+        s.extraMin = sp.getInt("st_extra", 0); s.warned = sp.getInt("st_warned", 0);
+        if (ScreenTime.roll(s, ScreenTime.dayKey(System.currentTimeMillis(), limitResetHour(), java.util.TimeZone.getDefault()))) saveTimeState(s);
+        return s;
+    }
+    public void saveTimeState(ScreenTime.State s) {
+        sp.edit().putInt("st_day", s.day).putLong("st_used", s.usedSec).putInt("st_earned", s.earnedMin)
+                .putInt("st_extra", s.extraMin).putInt("st_warned", s.warned).commit();
+    }
+    /** Лимит включён и время на сегодня вышло. */
+    public boolean timeUp() { return limitOn() && ScreenTime.leftSec(timeState(), limitRules()) <= 0; }
+    public long timeLeftSec() { return ScreenTime.leftSec(timeState(), limitRules()); }
+    /** Заработать минуты (с дневным потолком). @return сколько добавлено. */
+    public int earnTime(int min) {
+        if (!limitOn() || min <= 0) return 0;
+        ScreenTime.State s = timeState(); ScreenTime.Rules r = limitRules();
+        int add = ScreenTime.earn(s, r, min); ScreenTime.rearmWarnings(s, r); saveTimeState(s);
+        return add;
+    }
+    /** Добавить минуты вне потолка (новый уровень чтения, родитель). */
+    public void addExtraTime(int min) {
+        ScreenTime.State s = timeState(); ScreenTime.Rules r = limitRules();
+        s.extraMin += min; ScreenTime.rearmWarnings(s, r); saveTimeState(s);
+    }
 }

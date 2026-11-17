@@ -48,6 +48,7 @@ public class WatchService extends AccessibilityService {
         if (!p.enabled()) return;
         long now = SystemClock.elapsedRealtime();
         if (p.locked()) {
+            if (isPhone(s)) return;   // звонок (входящий или с экрана «время вышло») не перебиваем
             if (now - lastStart < 700) return;
             lastStart = now;
             LockService.showQuiz(this);
@@ -61,6 +62,12 @@ public class WatchService extends AccessibilityService {
                     .putExtra(QuizActivity.EXTRA_GUARD, true)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
         }
+    }
+
+    /** Звонилка и экран вызова: при блокировке на весь вечер (дневное время вышло) позвонить родителям можно. */
+    static boolean isPhone(String pkg) {
+        return pkg.equals("com.android.incallui") || pkg.equals("com.android.server.telecom") || pkg.equals("com.android.phone")
+                || pkg.equals("com.google.android.dialer") || pkg.equals("com.android.dialer") || pkg.equals("com.android.contacts");
     }
 
     static boolean isGuarded(String pkg) {

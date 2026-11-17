@@ -26,7 +26,9 @@ public class MainActivity extends Activity {
     private Prefs prefs;
     private LinearLayout perms;
     private EditText etMin, etMax, etNeed, etGrace, etCode, etInterval, etCheckCount, etThreshold, etStartLevel, etBonus, etVolDay, etVolEve, etVolNight, etEveHours, etNightHours, etBonusPer, etBankMax;
-    private TextView tvStat, tvReading;
+    private TextView tvStat, tvReading, tvTimeToday;
+    private EditText etLimBase, etLimEarn, etLimRead, etLimParent, etLimReset, etLimAdd;
+    private android.widget.CheckBox cbLimit;
     private Button btInstallApk, btPrepare;
     /** Идёт установка пакета или подготовка модели (минуты) — вторую не запускаем. */
     private static volatile boolean readingBusy;
@@ -70,10 +72,11 @@ public class MainActivity extends Activity {
         etMax = field("до", prefs.maxFactor(), root);
         etNeed = field("Правильных ответов для разблокировки", prefs.needCorrect(), root);
         etGrace = field("Не спрашивать, если экран гас меньше (сек)", prefs.graceSeconds(), root);
+        buildLimitSection(root);
         root.addView(label("Контрольные примеры во время игры"));
         etInterval = field("Каждые N минут работы экрана (0 = выключить)", prefs.checkIntervalMin(), root);
         etCheckCount = field("Примеров в контрольной проверке", prefs.checkCount(), root);
-        etBonusPer = field("После разблокировки можно решать ещё: + минут к следующей проверке за пример (0 = выключить)", prefs.bonusPerExampleMin(), root);
+        etBonusPer = field("После разблокировки можно решать ещё: + минут за пример (к дневному времени, а без лимита — к следующей проверке; 0 = выключить)", prefs.bonusPerExampleMin(), root);
         etBankMax = field("Запас минут — не больше", prefs.bankMaxMin(), root);
         Button grid = new Button(this);
         grid.setText("Как выучена таблица");
@@ -142,6 +145,7 @@ public class MainActivity extends Activity {
         }
         refreshPerms();
         refreshReading();
+        refreshTimeToday();
         tvStat.setText("\nСтатистика: задано " + prefs.statAsked() + ", ошибок " + prefs.statWrong());
         if (prefs.enabled()) LockService.start(this);
     }
@@ -188,6 +192,40 @@ public class MainActivity extends Activity {
             row.addView(bt);
         }
         perms.addView(row);
+    }
+
+    // ---------------- дневной лимит ----------------
+
+    private void buildLimitSection(LinearLayout root) {
+        root.addView(label("Время телефона в день (вместо лимита Family Link)"));
+        cbLimit = new android.widget.CheckBox(this);
+        cbLimit.setText("Включить дневной лимит: время кончилось — телефон закрыт, минуты зарабатываются примерами и чтением");
+        cbLimit.setChecked(prefs.limitOn());
+        root.addView(cbLimit);
+        tvTimeToday = new TextView(this);
+        root.addView(tvTimeToday);
+        etLimBase = field("Минут в день просто так", prefs.limitBaseMin(), root);
+        etLimEarn = field("Можно заработать за день, минут — не больше", prefs.limitEarnMaxMin(), root);
+        etLimRead = field("За прочитанный текст, минут (за пример — поле «+ минут за пример» ниже)", prefs.limitReadMin(), root);
+        etLimParent = field("Родительский код на экране «время вышло» добавляет, минут", prefs.limitParentMin(), root);
+        etLimReset = field("Новый день начинается в (час; отбой Family Link кончается в 6)", prefs.limitResetHour(), root);
+        etLimAdd = field("Добавить сегодня, минут (минус — убавить)", 0, root);
+        etLimAdd.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        Button add = new Button(this);
+        add.setText("Добавить");
+        add.setOnClickListener(v -> {
+            int m = num(etLimAdd, 0);
+            if (m != 0) { prefs.addExtraTime(m); etLimAdd.setText("0"); LockService.refresh(this); refreshTimeToday(); }
+        });
+        root.addView(add);
+    }
+
+    private void refreshTimeToday() {
+        if (tvTimeToday == null) return;
+        ScreenTime.State st = prefs.timeState(); ScreenTime.Rules r = prefs.limitRules();
+        tvTimeToday.setText((prefs.limitOn() ? "" : "(выключено) ") + "Сегодня: использовано " + ScreenTime.fmt(st.usedSec)
+                + ", осталось " + ScreenTime.fmt(ScreenTime.leftSec(st, r)) + "\nзаработано " + ScreenTime.fmtMin(st.earnedMin)
+                + " из " + ScreenTime.fmtMin(r.earnMaxMin) + (st.extraMin != 0 ? ", добавлено " + st.extraMin + " мин" : ""));
     }
 
     private TextView label(String s) {
@@ -265,6 +303,9 @@ public class MainActivity extends Activity {
         prefs.setReadThresholdPct(TaskPicker.clampThreshold(num(etThreshold, TaskPicker.READ_TO_END)));
         prefs.setReadStartLevel(Math.max(1, Math.min(9, num(etStartLevel, 5))));
         prefs.setLevelUpBonusMin(Math.max(0, Math.min(240, num(etBonus, 30))));
+        prefs.setLimit(cbLimit.isChecked(), Math.max(0, Math.min(24 * 60, num(etLimBase, 90))), Math.max(0, Math.min(24 * 60, num(etLimEarn, 90))),
+                Math.max(0, Math.min(120, num(etLimRead, 10))), Math.max(1, Math.min(600, num(etLimParent, 30))), Math.max(0, Math.min(23, num(etLimReset, 6))));
+        refreshTimeToday();
         etThreshold.setText(String.valueOf(prefs.readThresholdPct())); etStartLevel.setText(String.valueOf(prefs.readStartLevel()));
         if (prefs.enabled()) LockService.start(this);
         String code = etCode.getText().toString().trim();
