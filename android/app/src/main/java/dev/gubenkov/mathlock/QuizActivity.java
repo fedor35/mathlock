@@ -49,9 +49,12 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     /** Ребёнок ушёл звонить с экрана «время вышло» — не возвращать экран сразу. */
     private boolean calling;
     private TextView tvRead, tvCall;
+    /** Экран заданий на виду — время телефона не идёт (в т.ч. «реши ещё» после разблокировки). */
+    static volatile boolean visible;
     private final Runnable timeUpWatch = new Runnable() {
         @Override public void run() {
             if (!timeUp || done) return;
+            if (prefs.locked() && !prefs.timeUp()) { leaveTimeUp(); return; }   // новые сутки или родитель выключил лимит
             if (tvProgress != null) { tvProgress.setText(progressText()); refreshTimeUpButtons(); }
             h.postDelayed(this, 30_000L);   // наступили новые сутки — появится «Открыть телефон»
         }
@@ -121,7 +124,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     @Override public void onReadingPassed() {
         if (done) return;
         if (!guard && prefs.limitOn() && prefs.limitReadMin() > 0) {   // текст прочитан — минуты к дневному времени
-            int add = prefs.earnTime(prefs.limitReadMin());
+            int add = prefs.earnTime(prefs.limitReadMin(), "read");
             LockService.refresh(this);
             if (add > 0) android.widget.Toast.makeText(this, "📖 +" + ScreenTime.fmtMin(add) + " к времени телефона", android.widget.Toast.LENGTH_LONG).show();
         }
@@ -152,11 +155,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             guard = false; timeUp = true; bonusMode = false; correct = 0; stopReading(); buildUi(); next(null);
             h.removeCallbacks(timeUpWatch); h.post(timeUpWatch); return;
         }
-        if (timeUp && !up && !g && !done && prefs.locked()) {   // наступили новые сутки — обычная разблокировка
-            timeUp = false; h.removeCallbacks(timeUpWatch); correct = 0; stopReading();
-            if (!startReadingIfChosen(null)) { buildUi(); next(null); }
-            return;
-        }
+        if (timeUp && !up && !g && !done && prefs.locked()) { leaveTimeUp(); return; }
         if (g != guard) { guard = g; correct = 0; stopReading(); buildUi(); next(null); }
         else if (bonusMode && prefs.locked()) { bonusMode = false; correct = 0; buildUi(); next(null); }   // экран гас — новая блокировка
     }
@@ -174,7 +173,8 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     @Override protected void onStart() {
         super.onStart();
-        calling = false;
+        visible = true;
+        if (!LockService.inCall(this)) calling = false;
         if (AdminReceiver.isOwner(this)) {
             try { startLockTask(); } catch (Exception ignored) { }
         }
@@ -183,10 +183,11 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     @Override protected void onStop() {
         super.onStop();
+        visible = false;
         if (reading != null) reading.onStop();
         // Если нас свернули, а разблокировка не пройдена — вернёмся сами (страховка к WatchService).
         if (bonusMode && !done && !prefs.locked()) { done = true; finishAndRemoveTask(); return; }   // ушёл из «ещё примеров» — просто открыто
-        if (calling) return;   // звонок с экрана «время вышло»: вернёт WatchService, когда уйдёт со звонилки
+        if (calling || LockService.inCall(this)) return;   // звонок с экрана «время вышло»: вернёт WatchService, когда уйдёт со звонилки
         if (!done && !guard && prefs.enabled() && prefs.locked()) h.postDelayed(() -> { if (!done) LockService.showQuiz(this); }, 400);
     }
 
@@ -309,6 +310,12 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         setContentView(outer);
     }
 
+    /** Время снова есть без заработка (новые сутки, лимит выключен) — обычная разблокировка. */
+    private void leaveTimeUp() {
+        timeUp = false; h.removeCallbacks(timeUpWatch); correct = 0; stopReading();
+        if (!startReadingIfChosen(null)) { buildUi(); next(null); }
+    }
+
     private TextView pill(String s, String color) {
         TextView t = text(18, "#FFFFFF"); t.setText(s); t.setTypeface(Typeface.DEFAULT_BOLD);
         t.setPadding(dp(20), dp(10), dp(20), dp(10));
@@ -343,6 +350,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     private void call() {
         calling = true;
+        try { stopLockTask(); } catch (Exception ignored) { }
         try {
             startActivity(new android.content.Intent(android.content.Intent.ACTION_DIAL).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (Exception e) { calling = false; tvHint.setText("Не открылась звонилка"); }
@@ -353,6 +361,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         if (timeUp) {
             if (prefs.timeLeftSec() <= 0) return;
             prefs.setLocked(false); prefs.setNeedNow(prefs.needCorrect());
+            prefs.logTime("open", 0);
             LockService.refresh(this);
         }
         finishUnlock();
@@ -438,7 +447,9 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             return bank >= max ? "Запас полный: " + bank + " мин" : "Открыто! Реши ещё — +" + prefs.bonusPerExampleMin() + " мин до проверки\nЗапас: " + bank + " из " + max + " мин";
         }
         int need = prefs.needNow();
-        return need == 1 ? "Контрольный пример" : "Решено " + correct + " из " + need;
+        String t = need == 1 ? "Контрольный пример" : "Решено " + correct + " из " + need;
+        if (prefs.limitOn()) t += "\n⏳ Осталось сегодня: " + ScreenTime.fmt(prefs.timeLeftSec());
+        return t;
     }
 
     private void next(String hint) {
@@ -469,7 +480,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         String pc = prefs.parentCode();
         if (!pc.isEmpty() && input.toString().endsWith(pc)) {
             if (timeUp) {   // родитель добавляет время (вне потолка заработка)
-                prefs.addExtraTime(Math.max(1, prefs.limitParentMin()));
+                prefs.addExtraTime(Math.max(1, prefs.limitParentMin()), "parent_code");
             }
             unlock();
         }
@@ -489,7 +500,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         if (timeUp || (bonusMode && prefs.limitOn())) {   // зарабатываем минуты к дневному времени
             if (timeUp && ScreenTime.canEarnMin(prefs.timeState(), prefs.limitRules()) <= 0) { input.setLength(0); tvInput.setText(""); return; }
             if (ok) {
-                int add = prefs.earnTime(prefs.bonusPerExampleMin());
+                int add = prefs.earnTime(prefs.bonusPerExampleMin(), timeUp ? "example_timeup" : "example");
                 LockService.refresh(this);
                 tvProgress.setText(progressText());
                 if (timeUp) refreshTimeUpButtons();

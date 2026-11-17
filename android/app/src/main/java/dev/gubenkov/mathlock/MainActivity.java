@@ -215,7 +215,7 @@ public class MainActivity extends Activity {
         add.setText("Добавить");
         add.setOnClickListener(v -> {
             int m = num(etLimAdd, 0);
-            if (m != 0) { prefs.addExtraTime(m); etLimAdd.setText("0"); LockService.refresh(this); refreshTimeToday(); }
+            if (m != 0) { prefs.addExtraTime(m, "parent_add"); etLimAdd.setText("0"); LockService.refresh(this); refreshTimeToday(); }
         });
         root.addView(add);
     }

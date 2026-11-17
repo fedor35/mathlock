@@ -75,7 +75,12 @@ public final class ScreenTime {
     }
 
     /** Время вышло — перерасход (пока открывался экран блокировки) не должен съедать будущий заработок. */
-    public static void clampUsed(State s, Rules r) { s.usedSec = Math.min(s.usedSec, allowedSec(s, r)); }
+    public static void clampUsed(State s, Rules r) { s.usedSec = Math.max(0, Math.min(s.usedSec, allowedSec(s, r))); }
+
+    /** Добавка вне потолка; минус (родитель убавил) — не ниже нуля доступного на сегодня. */
+    public static void addExtra(State s, Rules r, int min) {
+        s.extraMin = Math.max(s.extraMin + min, -(r.baseMin + Math.min(s.earnedMin, r.earnMaxMin)));
+    }
 
     /** Какое предупреждение показать сейчас (0 — никакого); помечает его показанным. */
     public static int warnNow(State s, Rules r) {

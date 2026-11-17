@@ -752,8 +752,8 @@ final class ReadingScreen {
             msg += "\nНовый уровень " + after + "!";
             int bonus = prefs.levelUpBonusMin();
             if (bonus > 0) {   // награда временем: столько минут без заданий
-                prefs.setFreeUntil(System.currentTimeMillis() + bonus * 60_000L);
-                if (prefs.limitOn()) { prefs.addExtraTime(bonus); msg += "\n🎁 +" + bonus + " минут к времени телефона"; }   // вне потолка заработка
+                if (!prefs.limitOn()) prefs.setFreeUntil(System.currentTimeMillis() + bonus * 60_000L);
+                if (prefs.limitOn()) { prefs.addExtraTime(bonus, "level"); msg += "\n🎁 +" + bonus + " минут к времени телефона"; }   // вне потолка заработка
                 else msg += "\n🎁 +" + bonus + " минут без заданий";
             }
         }

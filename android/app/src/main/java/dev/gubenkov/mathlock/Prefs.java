@@ -6,9 +6,12 @@ import android.content.SharedPreferences;
 /** Настройки и состояние «заблокирован/нет». Состояние хранится на диске, чтобы пережить смерть процесса. */
 public final class Prefs {
     private static final String NAME = "mathlock";
+    /** Чтение-правка-запись состояния суток идёт из службы (главный поток) и из распознавания (свой поток). */
+    static final Object TIME_LOCK = new Object();
     private final SharedPreferences sp;
+    private final Context ctx;
 
-    public Prefs(Context c) { sp = c.getSharedPreferences(NAME, Context.MODE_PRIVATE); }
+    public Prefs(Context c) { ctx = c.getApplicationContext() != null ? c.getApplicationContext() : c; sp = c.getSharedPreferences(NAME, Context.MODE_PRIVATE); }
 
     public boolean enabled() { return sp.getBoolean("enabled", false); }
     public void setEnabled(boolean v) { sp.edit().putBoolean("enabled", v).apply(); }
@@ -130,26 +133,70 @@ public final class Prefs {
         ScreenTime.State s = new ScreenTime.State();
         s.day = sp.getInt("st_day", 0); s.usedSec = sp.getLong("st_used", 0); s.earnedMin = sp.getInt("st_earned", 0);
         s.extraMin = sp.getInt("st_extra", 0); s.warned = sp.getInt("st_warned", 0);
-        if (ScreenTime.roll(s, ScreenTime.dayKey(System.currentTimeMillis(), limitResetHour(), java.util.TimeZone.getDefault()))) saveTimeState(s);
+        int oldDay = s.day; long oldUsed = s.usedSec; int oldEarned = s.earnedMin, oldExtra = s.extraMin;
+        int today = ScreenTime.dayKey(System.currentTimeMillis(), limitResetHour(), java.util.TimeZone.getDefault());
+        if (sp.getInt("st_reset", -1) != limitResetHour()) {   // родитель сдвинул начало суток — сегодняшнее не обнулять
+            if (oldDay != 0) s.day = today;
+            sp.edit().putInt("st_reset", limitResetHour()).apply();
+        }
+        if (ScreenTime.roll(s, today)) {
+            saveTimeState(s);
+            if (oldDay != 0 && limitOn()) writeTimeLog("day " + oldDay, 0, oldUsed, oldEarned, oldExtra, -1);
+        }
         return s;
     }
     public void saveTimeState(ScreenTime.State s) {
         sp.edit().putInt("st_day", s.day).putLong("st_used", s.usedSec).putInt("st_earned", s.earnedMin)
                 .putInt("st_extra", s.extraMin).putInt("st_warned", s.warned).commit();
     }
+    /**
+     * Журнал дневного времени во внешних files/time.tsv (родитель забирает adb pull, чтобы подобрать базу и потолок):
+     * когда, событие, минут, использовано мин, заработано, добавлено, осталось мин. «day N» — итог прошедших суток.
+     */
+    public void logTime(String kind, int min) {
+        if (!limitOn()) return;
+        ScreenTime.State s = timeState();
+        writeTimeLog(kind, min, s.usedSec, s.earnedMin, s.extraMin, ScreenTime.leftSec(s, limitRules()) / 60);
+    }
+
+    private void writeTimeLog(String kind, int min, long usedSec, int earned, int extra, long leftMin) {
+        try {
+            java.io.File ext = ctx.getExternalFilesDir(null);
+            if (ext == null) return;
+            String when = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ROOT).format(new java.util.Date());
+            String line = when + "\t" + kind + "\t" + min + "\t" + usedSec / 60 + "\t" + earned + "\t" + extra + "\t" + leftMin + "\n";
+            try (java.io.FileOutputStream o = new java.io.FileOutputStream(new java.io.File(ext, "time.tsv"), true)) {
+                o.write(line.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+        } catch (Exception ignored) { }
+    }
+
     /** Лимит включён и время на сегодня вышло. */
     public boolean timeUp() { return limitOn() && ScreenTime.leftSec(timeState(), limitRules()) <= 0; }
-    public long timeLeftSec() { return ScreenTime.leftSec(timeState(), limitRules()); }
+    public long timeLeftSec() { return limitOn() ? ScreenTime.leftSec(timeState(), limitRules()) : 24 * 3600L; }
     /** Заработать минуты (с дневным потолком). @return сколько добавлено. */
     public int earnTime(int min) {
         if (!limitOn() || min <= 0) return 0;
-        ScreenTime.State s = timeState(); ScreenTime.Rules r = limitRules();
-        int add = ScreenTime.earn(s, r, min); ScreenTime.rearmWarnings(s, r); saveTimeState(s);
+        synchronized (TIME_LOCK) {
+            ScreenTime.State s = timeState(); ScreenTime.Rules r = limitRules();
+            int add = ScreenTime.earn(s, r, min); ScreenTime.rearmWarnings(s, r); saveTimeState(s);
+            return add;
+        }
+    }
+    public int earnTime(int min, String why) {
+        int add = earnTime(min);
+        logTime(why, add);
         return add;
     }
     /** Добавить минуты вне потолка (новый уровень чтения, родитель). */
     public void addExtraTime(int min) {
-        ScreenTime.State s = timeState(); ScreenTime.Rules r = limitRules();
-        s.extraMin += min; ScreenTime.rearmWarnings(s, r); saveTimeState(s);
+        synchronized (TIME_LOCK) {
+            ScreenTime.State s = timeState(); ScreenTime.Rules r = limitRules();
+            ScreenTime.addExtra(s, r, min); ScreenTime.rearmWarnings(s, r); saveTimeState(s);
+        }
+    }
+    public void addExtraTime(int min, String why) {
+        addExtraTime(min);
+        logTime(why, min);
     }
 }

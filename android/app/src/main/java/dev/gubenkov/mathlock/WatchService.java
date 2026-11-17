@@ -43,6 +43,17 @@ public class WatchService extends AccessibilityService {
         CharSequence pkg = e.getPackageName();
         if (pkg == null) return;
         String s = pkg.toString();
+        if (s.equals(getPackageName()) && e.getClassName() != null && e.getClassName().toString().endsWith(".MainActivity")) {
+            // Настройки «Таблицы» — как системные: с лимитом времени ребёнок иначе снимет его сам
+            Prefs pm = new Prefs(this);
+            long t = SystemClock.elapsedRealtime();
+            if (pm.enabled() && !pm.locked() && t > pm.guardPassUntil() && t - lastStart >= 700) {
+                lastStart = t;
+                startActivity(new Intent(this, QuizActivity.class).putExtra(QuizActivity.EXTRA_GUARD, true)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            }
+            return;
+        }
         if (s.equals(getPackageName()) || s.equals("com.android.systemui") || s.startsWith("com.miui.securitycenter")) return;
         Prefs p = new Prefs(this);
         if (!p.enabled()) return;

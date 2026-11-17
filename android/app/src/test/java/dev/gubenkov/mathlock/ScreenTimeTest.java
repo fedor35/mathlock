@@ -77,4 +77,17 @@ public class ScreenTimeTest {
         assertEquals("1 ч", ScreenTime.fmt(3600));
         assertEquals("1 ч 30 мин", ScreenTime.fmt(5400));
     }
+
+    @Test public void parentMinusNeverBelowZero() {
+        ScreenTime.State s = new ScreenTime.State();
+        ScreenTime.roll(s, 1);
+        ScreenTime.earn(s, R, 10);
+        ScreenTime.addExtra(s, R, -500);
+        assertEquals(0, ScreenTime.allowedSec(s, R));
+        s.usedSec = 1200;
+        ScreenTime.clampUsed(s, R);
+        assertEquals(0, s.usedSec);
+        ScreenTime.addExtra(s, R, 30);                   // вернул — ровно 30 мин, без «долга» в плюс
+        assertEquals(30 * 60, ScreenTime.leftSec(s, R));
+    }
 }

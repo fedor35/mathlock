@@ -36,6 +36,7 @@ public class LockService extends Service {
             long free = p.freeLeftMs();   // бонусное время за новый уровень — проверка после него
             if (free > 0) { h.postDelayed(this, free + min * 60_000L); return; }
             if (!p.locked()) {
+                accountTime(false);   // дотикать открытое время до блокировки
                 p.setNeedNow(p.checkCount());
                 p.setScreenOffAt(0);
                 p.setLocked(true);
@@ -48,35 +49,58 @@ public class LockService extends Service {
     // ---- дневной лимит (ScreenTime): счёт времени, пока экран горит и телефон открыт ----
     static final long TICK_MS = 30_000L;
     private long lastTick;
+    /** На прошлом тике телефон был открыт (не экран примеров/чтения) — интервал считается, только если открыт на обоих концах. */
+    private boolean lastCountable;
     private final Runnable timeTick = new Runnable() {
         @Override public void run() { accountTime(true); }
     };
 
-    /** Учесть время с прошлого тика; time up — блокировка. @param again планировать следующий тик. */
+    /** Сейчас идёт время телефона: открыт и на экране не «Таблица» с заданием. */
+    private static boolean countable(Prefs p) { return !p.locked() && !QuizActivity.visible; }
+
+    /**
+     * Учесть время с прошлого тика; time up — блокировка.
+     * @param again перепланировать тик (false — только учесть: при гашении и перед блокировкой проверкой).
+     */
     private void accountTime(boolean again) {
-        h.removeCallbacks(timeTick);
+        if (again) h.removeCallbacks(timeTick);
         Prefs p = new Prefs(this);
         long now = SystemClock.elapsedRealtime();
         long delta = lastTick == 0 ? 0 : now - lastTick;
-        lastTick = now;
+        boolean cnt = countable(p), was = lastCountable;
+        lastTick = now; lastCountable = cnt;
         if (!p.enabled() || !p.limitOn()) { updateNotification(p); return; }
-        ScreenTime.State st = p.timeState(); ScreenTime.Rules r = p.limitRules();
-        if (!p.locked()) ScreenTime.use(st, delta / 1000, 2 * TICK_MS / 1000);
-        int warn = ScreenTime.warnNow(st, r);
-        boolean up = ScreenTime.leftSec(st, r) <= 0;
-        if (up) ScreenTime.clampUsed(st, r);
-        p.saveTimeState(st);
-        if (warn != 0 && !p.locked()) {
+        int warn = 0; boolean up;
+        synchronized (Prefs.TIME_LOCK) {
+            ScreenTime.State st = p.timeState(); ScreenTime.Rules r = p.limitRules();
+            if (cnt && was) ScreenTime.use(st, delta / 1000, 2 * TICK_MS / 1000);
+            if (cnt) warn = ScreenTime.warnNow(st, r);   // пока на экране задание, предупреждение не тратим
+            up = ScreenTime.leftSec(st, r) <= 0;
+            if (up) ScreenTime.clampUsed(st, r);
+            p.saveTimeState(st);
+        }
+        if (warn != 0) p.logTime(warn == ScreenTime.WARN_1 ? "warn1" : "warn5", 0);
+        if (warn != 0) {
             String msg = warn == ScreenTime.WARN_1 ? "Осталась 1 минута! Потом можно заработать ещё" : "Осталось 5 минут телефона на сегодня";
             android.widget.Toast.makeText(this, "⏰ " + msg, android.widget.Toast.LENGTH_LONG).show();
         }
         if (up && !p.locked() && screenOn(this)) {
             Log.i(TAG, "дневное время вышло — блокировка");
+            p.logTime("timeup", 0);
             p.setNeedNow(p.needCorrect()); p.setScreenOffAt(0); p.setLocked(true);
             showQuiz(this);
         }
         updateNotification(p);
         if (again && screenOn(this)) h.postDelayed(timeTick, TICK_MS);
+    }
+
+    /** Идёт звонок (звонит, разговор, связь в мессенджере) — экран заданий его не перекрывает. */
+    static boolean inCall(Context c) {
+        android.media.AudioManager am = c.getSystemService(android.media.AudioManager.class);
+        if (am == null) return false;
+        int m = am.getMode();
+        return m == android.media.AudioManager.MODE_RINGTONE || m == android.media.AudioManager.MODE_IN_CALL
+                || m == android.media.AudioManager.MODE_IN_COMMUNICATION;
     }
 
     private void updateNotification(Prefs p) {
@@ -115,7 +139,7 @@ public class LockService extends Service {
                     p.setLocked(true);
                 }
             } else if (Intent.ACTION_SCREEN_ON.equals(act) || Intent.ACTION_USER_PRESENT.equals(act)) {
-                if (Intent.ACTION_SCREEN_ON.equals(act)) { schedulePeriodic(); AdbKeeper.start(c); lastTick = SystemClock.elapsedRealtime(); accountTime(true); }
+                if (Intent.ACTION_SCREEN_ON.equals(act)) { schedulePeriodic(); AdbKeeper.start(c); lastTick = SystemClock.elapsedRealtime(); lastCountable = false; accountTime(true); }
                 maybeShowQuiz(c);
             }
         }
@@ -143,6 +167,7 @@ public class LockService extends Service {
         // После гашения кнопкой приходят события окон (WatchService) и onStop квиза —
         // запуск квиза в этот момент будил телефон.
         if (!screenOn(c)) { Log.d(TAG, "screen off, quiz postponed to SCREEN_ON"); return; }
+        if (inCall(c)) { Log.d(TAG, "call in progress, quiz postponed"); return; }   // вернёт WatchService/SCREEN_ON после звонка
         Intent q = new Intent(c, QuizActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         try { c.startActivity(q); } catch (Exception e) { Log.w(TAG, "cannot start quiz", e); }
@@ -178,7 +203,7 @@ public class LockService extends Service {
         // Вызывается и после «Сохранить» в настройках: перечитать интервал.
         if (getSystemService(android.os.PowerManager.class).isInteractive()) {
             schedulePeriodic();
-            if (lastTick == 0) lastTick = SystemClock.elapsedRealtime();
+            if (lastTick == 0) { lastTick = SystemClock.elapsedRealtime(); lastCountable = false; }
             accountTime(true);   // в т.ч. после разблокировки/заработка — сразу обновить остаток
         }
         return START_STICKY;
