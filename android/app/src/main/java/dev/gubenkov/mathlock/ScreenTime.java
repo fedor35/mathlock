@@ -98,6 +98,21 @@ public final class ScreenTime {
         if (left > 300) s.warned &= ~WARN_5;
     }
 
+    // ---- награда за текст по скорости (слов в минуту верно): быстрее читаешь — больше минут ----
+    /** Нижние границы ступеней, слов/мин. */
+    public static final int[] READ_TIER_WPM = {0, 30, 45, 60, 75, 90, 110};
+    /** Множитель базовой награды на ступени, в половинках: ×1, ×1,5, ×2, ×2,5, ×3, ×4, ×5. */
+    static final int[] READ_TIER_X2 = {2, 3, 4, 5, 6, 8, 10};
+
+    public static int readTier(float wcpm) {
+        int t = 0;
+        for (int i = 0; i < READ_TIER_WPM.length; i++) if (wcpm >= READ_TIER_WPM[i]) t = i;
+        return t;
+    }
+    public static int readRewardForTier(int baseMin, int tier) { return Math.round(baseMin * READ_TIER_X2[tier] / 2f); }
+    /** Минут за прочитанный текст при такой скорости; скорость неизвестна (&lt;0) — базовая награда. */
+    public static int readReward(int baseMin, float wcpm) { return readRewardForTier(baseMin, wcpm < 0 ? 0 : readTier(wcpm)); }
+
     /** «1 ч 25 мин», «12 мин», «40 с». */
     public static String fmt(long sec) {
         if (sec < 60) return Math.max(0, sec) + " с";

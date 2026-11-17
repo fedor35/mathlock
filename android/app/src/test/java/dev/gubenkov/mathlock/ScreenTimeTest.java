@@ -90,4 +90,15 @@ public class ScreenTimeTest {
         ScreenTime.addExtra(s, R, 30);                   // вернул — ровно 30 мин, без «долга» в плюс
         assertEquals(30 * 60, ScreenTime.leftSec(s, R));
     }
+
+    @Test public void readRewardBySpeed() {
+        assertEquals(10, ScreenTime.readReward(10, -1));
+        assertEquals(10, ScreenTime.readReward(10, 24));
+        assertEquals(15, ScreenTime.readReward(10, 30));
+        assertEquals(20, ScreenTime.readReward(10, 50));
+        assertEquals(25, ScreenTime.readReward(10, 64));
+        assertEquals(40, ScreenTime.readReward(10, 95));
+        assertEquals(50, ScreenTime.readReward(10, 130));
+        assertEquals(8, ScreenTime.readReward(5, 30));      // 7,5 → 8
+    }
 }

@@ -49,6 +49,8 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     /** Ребёнок ушёл звонить с экрана «время вышло» — не возвращать экран сразу. */
     private boolean calling;
     private TextView tvRead, tvCall;
+    /** Экран только для родительского кода (долгое нажатие на экране чтения): примеры тут телефон не открывают. */
+    private boolean codeOnly;
     /** Экран заданий на виду — время телефона не идёт (в т.ч. «реши ещё» после разблокировки). */
     static volatile boolean visible;
     private final Runnable timeUpWatch = new Runnable() {
@@ -123,10 +125,10 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     @Override public void onReadingPassed() {
         if (done) return;
-        if (!guard && prefs.limitOn() && prefs.limitReadMin() > 0) {   // текст прочитан — минуты к дневному времени
-            int add = prefs.earnTime(prefs.limitReadMin(), "read");
+        if (!guard && prefs.limitOn() && prefs.limitReadMin() > 0) {   // текст прочитан — минуты по скорости (показаны на экране чтения)
+            float wcpm = reading != null ? reading.passedWcpm : -1;
+            prefs.earnTime(ScreenTime.readReward(prefs.limitReadMin(), wcpm), String.format(java.util.Locale.ROOT, "read %.0f", wcpm));
             LockService.refresh(this);
-            if (add > 0) android.widget.Toast.makeText(this, "📖 +" + ScreenTime.fmtMin(add) + " к времени телефона", android.widget.Toast.LENGTH_LONG).show();
         }
         if (prefs.timeUp()) {   // заработок на сегодня исчерпан — назад на экран «время вышло»
             stopReading(); timeUp = true; buildUi(); next(null); h.removeCallbacks(timeUpWatch); h.post(timeUpWatch); return;
@@ -144,6 +146,26 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         buildUi();
         next(hint);
         if (timeUp) { h.removeCallbacks(timeUpWatch); h.post(timeUpWatch); }
+    }
+
+    @Override public void onReadingAnother() {
+        if (done) return;
+        stopReading();
+        if (!startReadingIfChosen("reading")) { buildUi(); next(readingHint); }
+    }
+
+    @Override public void onParentCode() {
+        if (done) return;
+        stopReading();
+        codeOnly = true; h.removeCallbacks(timeUpWatch);
+        buildUi(); next(null);
+    }
+
+    /** С экрана родительского кода — назад к чтению. */
+    private void backToReading() {
+        codeOnly = false;
+        if (!startReadingIfChosen("reading")) { buildUi(); next(readingHint); }
+        if (timeUp && reading == null) { h.removeCallbacks(timeUpWatch); h.post(timeUpWatch); }
     }
 
     @Override protected void onNewIntent(android.content.Intent i) {
@@ -164,7 +186,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         super.onConfigurationChanged(c);
         if (reading != null) { reading.arrange(); return; }   // экран чтения: альбом — текст слева, кнопки справа
         buildUi();
-        tvProblem.setText(guard ? "Родительский код" : cur.toString());
+        tvProblem.setText(guard || codeOnly ? "Родительский код" : cur.toString());
         tvInput.setText(input);
         tvProgress.setText(progressText());
         tvOpen.setVisibility(bonusMode ? View.VISIBLE : View.GONE);
@@ -219,7 +241,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         root.addView(tvProgress);
 
         // «Моя таблица» — ребёнок собирает выученные примеры (детям важны уровни и награды; сетка для родителя — в настройках)
-        if (!guard) {
+        if (!guard && !codeOnly) {
             tvTable = text(16, "#F2D46B");
             tvTable.setText(tableText());
             tvTable.setPadding(dp(14), dp(6), dp(14), dp(6));
@@ -260,9 +282,14 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         lp.topMargin = dp(8);
         root.addView(tvOpen, lp);
         tvRead = null; tvCall = null;
-        if (timeUp) {
+        if (codeOnly) {
+            TextView back = pill("📖 Читать", "#5B8DEF");
+            back.setOnClickListener(v -> backToReading());
+            lp = new LinearLayout.LayoutParams(-2, -2); lp.topMargin = dp(10);
+            root.addView(back, lp);
+        } else if (timeUp) {
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER);
-            tvRead = pill("📖 Почитать +" + ScreenTime.fmtMin(prefs.limitReadMin()), "#5B8DEF");
+            tvRead = pill("📖 Почитать: до +" + ScreenTime.fmtMin(ScreenTime.readRewardForTier(prefs.limitReadMin(), ScreenTime.READ_TIER_WPM.length - 1)), "#5B8DEF");
             tvRead.setOnClickListener(v -> readForTime());
             tvCall = pill("📞 Позвонить", "#26323F");
             tvCall.setOnClickListener(v -> call());
@@ -427,6 +454,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     private String progressText() {
         if (guard) return "Настройки защищены";
+        if (codeOnly) return "Для родителей";
         if (timeUp) {
             ScreenTime.State st = prefs.timeState(); ScreenTime.Rules r = prefs.limitRules();
             long left = ScreenTime.leftSec(st, r);
@@ -434,8 +462,9 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             String earned = "Заработано сегодня: " + ScreenTime.fmtMin(Math.min(st.earnedMin, r.earnMaxMin)) + " из " + ScreenTime.fmtMin(r.earnMaxMin);
             if (left > 0) return "Есть " + ScreenTime.fmt(left) + "! Реши ещё — +" + ScreenTime.fmtMin(prefs.bonusPerExampleMin()) + "\n" + earned;
             if (can <= 0) return "⏰ На сегодня всё!\nЗавтра с " + r.resetHour + ":00 снова " + ScreenTime.fmtMin(r.baseMin);
-            return "⏰ Время на сегодня вышло\nЗаработай: пример +" + ScreenTime.fmtMin(prefs.bonusPerExampleMin())
-                    + (prefs.limitReadMin() > 0 ? ", текст +" + ScreenTime.fmtMin(prefs.limitReadMin()) : "") + "\n" + earned;
+            return "⏰ Время на сегодня вышло\nЗаработай: текст +" + ScreenTime.fmtMin(prefs.limitReadMin()) + "…+"
+                    + ScreenTime.fmtMin(ScreenTime.readRewardForTier(prefs.limitReadMin(), ScreenTime.READ_TIER_WPM.length - 1))
+                    + " (быстрее — больше), пример +" + ScreenTime.fmtMin(prefs.bonusPerExampleMin()) + "\n" + earned;
         }
         if (bonusMode && prefs.limitOn()) {
             ScreenTime.State st = prefs.timeState(); ScreenTime.Rules r = prefs.limitRules();
@@ -457,7 +486,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         recent.add(FactStats.key(cur.a, cur.b)); while (recent.size() > 3) recent.remove(0);
         shownAt = android.os.SystemClock.elapsedRealtime();
         input.setLength(0);
-        tvProblem.setText(guard ? "Родительский код" : cur.toString());
+        tvProblem.setText(guard || codeOnly ? "Родительский код" : cur.toString());
         if (timeUp && ScreenTime.canEarnMin(prefs.timeState(), prefs.limitRules()) <= 0) tvProblem.setText("🌙");   // заработок исчерпан: клавиатура — для кода родителя
         tvInput.setText("");
         tvHint.setText(hint == null ? "" : hint);
@@ -487,7 +516,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     }
 
     private void check() {
-        if (input.length() == 0) return;
+        if (input.length() == 0 || codeOnly) { input.setLength(0); tvInput.setText(""); return; }
         int v;
         try { v = Integer.parseInt(input.toString()); } catch (NumberFormatException e) { v = -1; }
         boolean ok = v == cur.answer();

@@ -76,8 +76,12 @@ final class ReadingScreen {
     interface Host {
         /** Текст прочитан — разблокировать. */
         void onReadingPassed();
-        /** Читать нельзя или ребёнок выбрал примеры; hint — что показать над примером (может быть null). */
+        /** Читать нельзя (модель, микрофон); hint — что показать над примером (может быть null). */
         void onReadingFallback(String hint);
+        /** Текст не идёт — взять другой (вместо прежнего выхода на примеры: сын пропускал чтение, 17.11). */
+        void onReadingAnother();
+        /** Долгое нажатие на строку уровня — экран родительского кода (примеры там не открывают телефон). */
+        void onParentCode();
     }
 
     static final String TAG = ReadingEngine.TAG;
@@ -104,7 +108,11 @@ final class ReadingScreen {
     final long shownAt = SystemClock.elapsedRealtime();
 
     View root;
-    TextView levelView, textView, status, badge, mathBtn;
+    TextView levelView, textView, status, badge, mathBtn, rewardBtn;
+    /** Кнопка внизу справа — выход на примеры (модель не загрузилась), а не «другой текст». */
+    boolean mathIsFallback;
+    /** Скорость засчитанного прочтения (слов/мин верно) — от неё награда временем; -1 — ещё не прочитан. */
+    volatile float passedWcpm = -1;
     RoundIcon mic, listenBtn;
 
     final List<JSONObject> texts = new ArrayList<>();
@@ -176,7 +184,7 @@ final class ReadingScreen {
                 status.setText("Нажми на микрофон и читай вслух");
             });
         }, "reading-load").start();
-        h.postDelayed(() -> { if (!closed && model == null) showMathButton(); }, TaskPicker.LOAD_TIMEOUT_MS);
+        h.postDelayed(() -> { if (!closed && model == null) { mathIsFallback = true; mathBtn.setText("Примеры"); showMathButton(); } }, TaskPicker.LOAD_TIMEOUT_MS);
         h.postDelayed(() -> { if (!closed && !passed) showMathButton(); }, TaskPicker.FALLBACK_MS);
         return true;
     }
@@ -247,7 +255,7 @@ final class ReadingScreen {
         levelView = new TextView(act); levelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15); levelView.setTextColor(DIM);
         levelView.setGravity(Gravity.CENTER); levelView.setPadding(0, 0, 0, dp(10));
         // для родителя: долгое нажатие — экран примеров, где вводится родительский код
-        levelView.setOnLongClickListener(v -> { close(); host.onReadingFallback(null); return true; });
+        levelView.setOnLongClickListener(v -> { close(); host.onParentCode(); return true; });
 
         textView = new TextView(act); textView.setLineSpacing(0, 1.3f); textView.setTextColor(INK);
         textView.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
@@ -269,11 +277,16 @@ final class ReadingScreen {
         listenBtn.setOnClickListener(v -> toggleListen());
         mic = new RoundIcon(act, RoundIcon.MIC, ACCENT, Color.WHITE);
         mic.setOnClickListener(v -> onMic());
-        mathBtn = new TextView(act); mathBtn.setText("Примеры"); mathBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        mathBtn = new TextView(act); mathBtn.setText("Другой текст"); mathBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         mathBtn.setTextColor(TEXT); mathBtn.setGravity(Gravity.CENTER);
         GradientDrawable mb = new GradientDrawable(); mb.setColor(CHIP); mb.setCornerRadius(dp(24)); mathBtn.setBackground(mb);
         mathBtn.setVisibility(View.INVISIBLE);
-        mathBtn.setOnClickListener(v -> { close(); host.onReadingFallback(null); });
+        mathBtn.setOnClickListener(v -> { close(); if (mathIsFallback) host.onReadingFallback(null); else host.onReadingAnother(); });
+        rewardBtn = new TextView(act); rewardBtn.setText("🎁 Награды"); rewardBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        rewardBtn.setTextColor(TEXT); rewardBtn.setGravity(Gravity.CENTER);
+        GradientDrawable rb = new GradientDrawable(); rb.setColor(CHIP); rb.setCornerRadius(dp(24)); rewardBtn.setBackground(rb);
+        rewardBtn.setVisibility(prefs.limitOn() && prefs.limitReadMin() > 0 ? View.VISIBLE : View.GONE);
+        rewardBtn.setOnClickListener(v -> showRewards());
         leftBox = new FrameLayout(act); rightBox = new FrameLayout(act);
         root = fr;
         arrange();
@@ -294,10 +307,11 @@ final class ReadingScreen {
      */
     void arrange() {
         FrameLayout fr = (FrameLayout) root;
-        for (View v : new View[]{levelView, textView, status, mic, listenBtn, mathBtn, leftBox, rightBox}) detach(v);
+        for (View v : new View[]{levelView, textView, status, mic, listenBtn, mathBtn, rewardBtn, leftBox, rightBox}) detach(v);
         if (fr.getChildCount() > 0 && fr.getChildAt(0) != badge) fr.removeViewAt(0);
         leftBox.addView(listenBtn, new FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER));
-        rightBox.addView(mathBtn, new FrameLayout.LayoutParams(dp(110), dp(48), Gravity.CENTER));
+        rightBox.addView(rewardBtn, new FrameLayout.LayoutParams(dp(120), dp(48), Gravity.CENTER));
+        rightBox.addView(mathBtn, new FrameLayout.LayoutParams(dp(120), dp(48), Gravity.CENTER));
         boolean land = act.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
         LinearLayout l = new LinearLayout(act);
         if (!land) {
@@ -332,7 +346,65 @@ final class ReadingScreen {
         if (cur != null) h.post(this::render);   // телесуфлёр — под новую ширину строк
     }
 
-    void showMathButton() { if (mathBtn != null) mathBtn.setVisibility(View.VISIBLE); }
+    void showMathButton() {
+        if (mathBtn == null) return;
+        mathBtn.setVisibility(View.VISIBLE);
+        if (rewardBtn != null) rewardBtn.setVisibility(View.GONE);
+    }
+
+    /**
+     * «🎁 Награды»: сколько минут даёт текст при какой скорости, где сейчас ребёнок и сколько не хватает до следующей
+     * ступени — видно, что от прогресса зависит результат (просьба Фёдора 18.11).
+     */
+    void showRewards() {
+        if (closed) return;
+        FrameLayout fr = (FrameLayout) root;
+        FrameLayout over = new FrameLayout(act); over.setBackgroundColor(0xF01B2430); over.setClickable(true);
+        LinearLayout box = new LinearLayout(act); box.setOrientation(LinearLayout.VERTICAL); box.setGravity(Gravity.CENTER_HORIZONTAL);
+        box.setPadding(dp(20), dp(20), dp(20), dp(20));
+        TextView title = new TextView(act); title.setText("🎁 Минуты за прочитанный текст"); title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title.setTextColor(Color.WHITE); title.setTypeface(Typeface.DEFAULT_BOLD); title.setGravity(Gravity.CENTER);
+        box.addView(title);
+        int level = adapt.level(); float best = adapt.best(level);
+        int base = prefs.limitReadMin(), my = best > 0 ? ScreenTime.readTier(best) : -1;
+        TextView sub = new TextView(act); sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16); sub.setTextColor(DIM); sub.setGravity(Gravity.CENTER);
+        sub.setPadding(0, dp(6), 0, dp(14));
+        sub.setText("Чем быстрее читаешь без ошибок, тем больше минут" + (best > 0 ? String.format(Locale.ROOT, "\nТвой рекорд на уровне %d: %.0f слов в минуту", level, best) : ""));
+        box.addView(sub);
+        for (int t = 0; t < ScreenTime.READ_TIER_WPM.length; t++) {
+            int from = ScreenTime.READ_TIER_WPM[t];
+            String speed = t == 0 ? "медленно" : from + "+ слов/мин";
+            TextView row = new TextView(act); row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setText((t == my ? "👉 " : "     ") + speed + "   →   +" + ScreenTime.fmtMin(ScreenTime.readRewardForTier(base, t)));
+            row.setTextColor(t == my ? Color.WHITE : t < my ? 0xFF7FD1AE : TEXT);
+            row.setPadding(dp(16), dp(8), dp(16), dp(8));
+            GradientDrawable g = new GradientDrawable(); g.setCornerRadius(dp(14)); g.setColor(t == my ? SUCCESS : CARD); row.setBackground(g);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(5);
+            box.addView(row, lp);
+        }
+        if (my >= 0 && my + 1 < ScreenTime.READ_TIER_WPM.length) {
+            int need = (int) Math.ceil(ScreenTime.READ_TIER_WPM[my + 1] - best);
+            TextView next = new TextView(act); next.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18); next.setTextColor(0xFFF2D46B); next.setGravity(Gravity.CENTER);
+            next.setPadding(0, dp(14), 0, 0);
+            next.setText("Ещё " + Math.max(1, need) + " слов в минуту — и будет +" + ScreenTime.fmtMin(ScreenTime.readRewardForTier(base, my + 1)) + "!");
+            box.addView(next);
+        }
+        ScreenTime.State st = prefs.timeState(); ScreenTime.Rules r = prefs.limitRules();
+        TextView left = new TextView(act); left.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15); left.setTextColor(DIM); left.setGravity(Gravity.CENTER);
+        left.setPadding(0, dp(10), 0, 0);
+        left.setText("Сегодня можно заработать ещё " + ScreenTime.fmtMin(ScreenTime.canEarnMin(st, r)));
+        box.addView(left);
+        TextView close = new TextView(act); close.setText("Читать!"); close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        close.setTextColor(Color.WHITE); close.setTypeface(Typeface.DEFAULT_BOLD); close.setGravity(Gravity.CENTER);
+        close.setPadding(dp(28), dp(12), dp(28), dp(12));
+        GradientDrawable cb = new GradientDrawable(); cb.setColor(ACCENT); cb.setCornerRadius(dp(28)); close.setBackground(cb);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2); clp.topMargin = dp(18);
+        box.addView(close, clp);
+        android.widget.ScrollView sv = new android.widget.ScrollView(act); sv.addView(box);
+        over.addView(sv, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+        fr.addView(over, new FrameLayout.LayoutParams(-1, -1));
+        close.setOnClickListener(v -> fr.removeView(over));
+    }
 
     void show() {
         cur = new ReadingText(texts.get(idx).optString("text"));
@@ -636,7 +708,7 @@ final class ReadingScreen {
             if (ok) {
                 status.setTextColor(TEXT);
                 status.setText((allOk ? "Молодец! Всё верно" : "Молодец! Верно " + pct + "%") + (hints > 0 ? "\nОранжевым — проверь окончания" : ""));
-                mic.setEnabled(false); listenBtn.setEnabled(false); mathBtn.setVisibility(View.INVISIBLE);
+                mic.setEnabled(false); listenBtn.setEnabled(false); mathBtn.setVisibility(View.INVISIBLE); rewardBtn.setVisibility(View.GONE);
                 celebrate();
             } else {
                 status.setText((prefs.readThresholdPct() == TaskPicker.READ_TO_END ? "Почти! Дочитай до конца" : "Почти! Прочитай красные слова ещё раз") + (hints > 0 ? "\nОранжевым — проверь окончания" : ""));
@@ -653,16 +725,24 @@ final class ReadingScreen {
             if (prev == null) { partSeconds = 0; partRecorded = false; }
             if (!partRecorded) {
                 ReadingStats all = new ReadingStats(stats.words, stats.ok, stats.wrong, stats.reached, partSeconds + stats.seconds);
+                if (ok) passedWcpm = all.wcpm();
                 if (all.counts()) { news = record(textId, level, chall, all, d, base); partRecorded = true; }
                 else partSeconds = all.seconds;
             }
         } catch (Throwable e) { Log.e(TAG, "журнал чтения", e); }
+        if (ok && passedWcpm < 0) passedWcpm = stats.wcpm();
+        if (ok && prefs.limitOn() && prefs.limitReadMin() > 0) {   // награда временем — по скорости (зачислит QuizActivity)
+            int can = ScreenTime.canEarnMin(prefs.timeState(), prefs.limitRules());
+            int rew = Math.min(can, ScreenTime.readReward(prefs.limitReadMin(), passedWcpm));
+            news += (news.isEmpty() ? "" : "\n") + (rew > 0 ? String.format(Locale.ROOT, "🎁 +%s к телефону (%.0f слов в минуту)", ScreenTime.fmtMin(rew), passedWcpm)
+                    : "🎁 Сегодня минуты уже заработаны");
+        }
         final String n = news;
         h.post(() -> {
             if (closed) return;
             if (!n.isEmpty()) status.setText(status.getText() + "\n" + n);
             showLevel();
-            if (ok) h.postDelayed(() -> { if (!closed) { if (quiz != null) showQuiz(textId, quiz); else host.onReadingPassed(); } }, n.contains("🏅") ? 3800 : 2400);
+            if (ok) h.postDelayed(() -> { if (!closed) { if (quiz != null) showQuiz(textId, quiz); else host.onReadingPassed(); } }, n.contains("🏅") || n.contains("🎁 +") ? 3800 : 2400);
         });
     }
 

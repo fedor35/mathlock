@@ -206,7 +206,7 @@ public class MainActivity extends Activity {
         root.addView(tvTimeToday);
         etLimBase = field("Минут в день просто так", prefs.limitBaseMin(), root);
         etLimEarn = field("Можно заработать за день, минут — не больше", prefs.limitEarnMaxMin(), root);
-        etLimRead = field("За прочитанный текст, минут (за пример — поле «+ минут за пример» ниже)", prefs.limitReadMin(), root);
+        etLimRead = field("За прочитанный текст, минут — при медленном чтении; быстрее — больше: 30+ слов/мин ×1,5, 45+ ×2, 60+ ×2,5, 75+ ×3, 90+ ×4, 110+ ×5", prefs.limitReadMin(), root);
         etLimParent = field("Родительский код на экране «время вышло» добавляет, минут", prefs.limitParentMin(), root);
         etLimReset = field("Новый день начинается в (час; отбой Family Link кончается в 6)", prefs.limitResetHour(), root);
         etLimAdd = field("Добавить сегодня, минут (минус — убавить)", 0, root);
@@ -292,7 +292,7 @@ public class MainActivity extends Activity {
         prefs.setNeedCorrect(Math.max(1, Math.min(20, num(etNeed, 3))));
         prefs.setGraceSeconds(Math.max(0, num(etGrace, 20)));
         prefs.setCheckIntervalMin(Math.max(0, num(etInterval, 30)));
-        prefs.setBonus(Math.max(0, Math.min(30, num(etBonusPer, 5))), Math.max(0, Math.min(240, num(etBankMax, 30))));
+        prefs.setBonus(Math.max(0, Math.min(30, num(etBonusPer, 2))), Math.max(0, Math.min(240, num(etBankMax, 30))));
         prefs.setVolumes(pct(etVolDay, 100), pct(etVolEve, 50), pct(etVolNight, 30));
         int[] eve = VolumeGuard.parseRange(etEveHours.getText().toString()), night = VolumeGuard.parseRange(etNightHours.getText().toString());
         if (eve == null || night == null) Toast.makeText(this, "Часы громкости: пишите так — 21-9 или 21:30-8:30", Toast.LENGTH_LONG).show();
