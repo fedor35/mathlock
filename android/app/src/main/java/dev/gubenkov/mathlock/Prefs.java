@@ -50,7 +50,12 @@ public final class Prefs {
     public void setNeedNow(int v) { sp.edit().putInt("need_now", v).apply(); }
 
     /** До какого момента (elapsedRealtime) родитель может ходить по Настройкам без кода. */
-    public long guardPassUntil() { return sp.getLong("guard_pass_until", 0); }
+    public long guardPassUntil() {
+        // Пропуск считается от включения телефона: после перезагрузки старое значение оказывалось «в будущем» и открывало
+        // Настройки без кода на часы (найдено 18.11 — телефон сел и перезагрузился). Больше 10 мин вперёд — недействителен.
+        long v = sp.getLong("guard_pass_until", 0);
+        return v > android.os.SystemClock.elapsedRealtime() + QuizActivity.GUARD_PASS_MS ? 0 : v;
+    }
     public void setGuardPassUntil(long t) { sp.edit().putLong("guard_pass_until", t).apply(); }
 
     public int statAsked() { return sp.getInt("stat_asked", 0); }

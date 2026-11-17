@@ -74,7 +74,7 @@ public class MainActivity extends Activity {
         etGrace = field("Не спрашивать, если экран гас меньше (сек)", prefs.graceSeconds(), root);
         buildLimitSection(root);
         root.addView(label("Контрольные примеры во время игры"));
-        etInterval = field("Каждые N минут работы экрана (0 = выключить)", prefs.checkIntervalMin(), root);
+        etInterval = field("Каждые N минут работы экрана (0 = выключить; при дневном лимите не задаются)", prefs.checkIntervalMin(), root);
         etCheckCount = field("Примеров в контрольной проверке", prefs.checkCount(), root);
         etBonusPer = field("После разблокировки можно решать ещё: + минут за пример (к дневному времени, а без лимита — к следующей проверке; 0 = выключить)", prefs.bonusPerExampleMin(), root);
         etBankMax = field("Запас минут — не больше", prefs.bankMaxMin(), root);
@@ -142,6 +142,13 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "Обои установлены", Toast.LENGTH_SHORT).show();
                 android.util.Log.i("MathLock", "wallpaper set OK");
             } catch (Exception e) { Toast.makeText(this, "Обои: " + e, Toast.LENGTH_LONG).show(); android.util.Log.w("MathLock", "wallpaper", e); }
+        }
+        // Настройки под родительским кодом (с дневным лимитом ребёнок иначе снимет его сам). Событие окна от WatchService
+        // на HyperOS приходит не всегда — проверка здесь.
+        if (prefs.enabled() && !prefs.parentCode().isEmpty() && android.os.SystemClock.elapsedRealtime() > prefs.guardPassUntil()) {
+            startActivity(new Intent(this, QuizActivity.class).putExtra(QuizActivity.EXTRA_GUARD, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            return;
         }
         refreshPerms();
         refreshReading();

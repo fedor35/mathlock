@@ -130,6 +130,9 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             prefs.earnTime(ScreenTime.readReward(prefs.limitReadMin(), wcpm), String.format(java.util.Locale.ROOT, "read %.0f", wcpm));
             LockService.refresh(this);
         }
+        if (prefs.limitOn() && !prefs.timeUp() && !guard && LockService.screenOn(this)) {   // прочитал — экран заработка: ещё текст или примеры, «Открыть телефон»
+            stopReading(); unlock(true, "📖 Текст засчитан! Можно ещё"); return;
+        }
         if (prefs.timeUp()) {   // заработок на сегодня исчерпан — назад на экран «время вышло»
             stopReading(); timeUp = true; buildUi(); next(null); h.removeCallbacks(timeUpWatch); h.post(timeUpWatch); return;
         }
@@ -228,6 +231,8 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
 
     private void buildUi() {
         boolean land = getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        // экраны с лишними кнопками (время вышло, заработок, код родителя): иначе нижний ряд клавиатуры уезжал за край
+        boolean compact = timeUp || codeOnly || (bonusMode && prefs.limitOn());
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(land ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         outer.setGravity(Gravity.CENTER);
@@ -252,13 +257,13 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             root.addView(tvTable, tlp);
         }
 
-        tvProblem = text(guard ? 34 : 64, "#FFFFFF");
+        tvProblem = text(guard || codeOnly ? 34 : compact ? 52 : 64, "#FFFFFF");
         tvProblem.setTypeface(Typeface.DEFAULT_BOLD);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-        lp.topMargin = dp(32);
+        lp.topMargin = dp(compact ? 12 : 32);
         root.addView(tvProblem, lp);
 
-        tvInput = text(56, "#7FD1AE");
+        tvInput = text(compact ? 44 : 56, "#7FD1AE");
         tvInput.setMinWidth(dp(120));
         lp = new LinearLayout.LayoutParams(-2, -2);
         lp.topMargin = dp(8);
@@ -287,6 +292,13 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             back.setOnClickListener(v -> backToReading());
             lp = new LinearLayout.LayoutParams(-2, -2); lp.topMargin = dp(10);
             root.addView(back, lp);
+        } else if (bonusMode && prefs.limitOn()) {
+            tvRead = pill("📖 Ещё текст: до +" + ScreenTime.fmtMin(ScreenTime.readRewardForTier(prefs.limitReadMin(), ScreenTime.READ_TIER_WPM.length - 1)), "#5B8DEF");
+            tvRead.setOnClickListener(v -> readForTime());
+            boolean can = ScreenTime.canEarnMin(prefs.timeState(), prefs.limitRules()) > 0;
+            tvRead.setVisibility(can && prefs.limitReadMin() > 0 && readingAvailable() ? View.VISIBLE : View.GONE);
+            lp = new LinearLayout.LayoutParams(-2, -2); lp.topMargin = dp(10);
+            root.addView(tvRead, lp);
         } else if (timeUp) {
             LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER);
             tvRead = pill("📖 Почитать: до +" + ScreenTime.fmtMin(ScreenTime.readRewardForTier(prefs.limitReadMin(), ScreenTime.READ_TIER_WPM.length - 1)), "#5B8DEF");
@@ -316,7 +328,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
             bt.setBackgroundResource(R.drawable.key_bg);
             bt.setStateListAnimator(null);
             GridLayout.LayoutParams g = new GridLayout.LayoutParams();
-            int sz = land ? 64 : 84, m = land ? 5 : 8;
+            int sz = land ? 64 : compact ? 74 : 84, m = land ? 5 : compact ? 6 : 8;
             g.width = dp(sz); g.height = dp(sz); g.setMargins(dp(m), dp(m), dp(m), dp(m));
             bt.setLayoutParams(g);
             bt.setOnClickListener(v -> key(k));
@@ -468,7 +480,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         }
         if (bonusMode && prefs.limitOn()) {
             ScreenTime.State st = prefs.timeState(); ScreenTime.Rules r = prefs.limitRules();
-            return "Открыто! Реши ещё — +" + ScreenTime.fmtMin(prefs.bonusPerExampleMin()) + " к времени\nОсталось сегодня: "
+            return "Открыто! Копи время: пример +" + ScreenTime.fmtMin(prefs.bonusPerExampleMin()) + ", текст — больше\nОсталось сегодня: "
                     + ScreenTime.fmt(ScreenTime.leftSec(st, r)) + " · можно заработать ещё " + ScreenTime.fmtMin(ScreenTime.canEarnMin(st, r));
         }
         if (bonusMode) {
@@ -591,8 +603,9 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
         // Заработал разблокировку примерами — можно решить ещё: с дневным лимитом — минуты к времени, без него — отодвинуть проверку
         boolean canBonus = prefs.limitOn() ? ScreenTime.canEarnMin(prefs.timeState(), prefs.limitRules()) > 0
                 : prefs.checkIntervalMin() > 0 && prefs.checkBankMin() < prefs.bankMaxMin();
-        if (offerBonus && tvOpen != null && prefs.bonusPerExampleMin() > 0 && canBonus) {
-            done = false; bonusMode = true; correct = 0;
+        if (offerBonus && (tvOpen != null || prefs.limitOn()) && prefs.bonusPerExampleMin() > 0 && canBonus) {
+            done = false; bonusMode = true; correct = 0; timeUp = false;
+            buildUi();   // после чтения примеров на экране ещё не было; с лимитом — кнопка «Ещё текст»
             tvOpen.setVisibility(View.VISIBLE);
             next(star != null ? star : "Верно!");
             return;

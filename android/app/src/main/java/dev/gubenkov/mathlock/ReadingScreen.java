@@ -282,7 +282,7 @@ final class ReadingScreen {
         GradientDrawable mb = new GradientDrawable(); mb.setColor(CHIP); mb.setCornerRadius(dp(24)); mathBtn.setBackground(mb);
         mathBtn.setVisibility(View.INVISIBLE);
         mathBtn.setOnClickListener(v -> { close(); if (mathIsFallback) host.onReadingFallback(null); else host.onReadingAnother(); });
-        rewardBtn = new TextView(act); rewardBtn.setText("🎁 Награды"); rewardBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        rewardBtn = new TextView(act); rewardBtn.setText("🎁 Награды"); rewardBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         rewardBtn.setTextColor(TEXT); rewardBtn.setGravity(Gravity.CENTER);
         GradientDrawable rb = new GradientDrawable(); rb.setColor(CHIP); rb.setCornerRadius(dp(24)); rewardBtn.setBackground(rb);
         rewardBtn.setVisibility(prefs.limitOn() && prefs.limitReadMin() > 0 ? View.VISIBLE : View.GONE);
@@ -310,8 +310,8 @@ final class ReadingScreen {
         for (View v : new View[]{levelView, textView, status, mic, listenBtn, mathBtn, rewardBtn, leftBox, rightBox}) detach(v);
         if (fr.getChildCount() > 0 && fr.getChildAt(0) != badge) fr.removeViewAt(0);
         leftBox.addView(listenBtn, new FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER));
-        rightBox.addView(rewardBtn, new FrameLayout.LayoutParams(dp(120), dp(48), Gravity.CENTER));
-        rightBox.addView(mathBtn, new FrameLayout.LayoutParams(dp(120), dp(48), Gravity.CENTER));
+        rightBox.addView(rewardBtn, new FrameLayout.LayoutParams(dp(108), dp(48), Gravity.CENTER));
+        rightBox.addView(mathBtn, new FrameLayout.LayoutParams(dp(108), dp(48), Gravity.CENTER));
         boolean land = act.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
         LinearLayout l = new LinearLayout(act);
         if (!land) {
@@ -359,7 +359,7 @@ final class ReadingScreen {
     void showRewards() {
         if (closed) return;
         FrameLayout fr = (FrameLayout) root;
-        FrameLayout over = new FrameLayout(act); over.setBackgroundColor(0xF01B2430); over.setClickable(true);
+        FrameLayout over = new FrameLayout(act); over.setBackgroundColor(BG); over.setClickable(true);
         LinearLayout box = new LinearLayout(act); box.setOrientation(LinearLayout.VERTICAL); box.setGravity(Gravity.CENTER_HORIZONTAL);
         box.setPadding(dp(20), dp(20), dp(20), dp(20));
         TextView title = new TextView(act); title.setText("🎁 Минуты за прочитанный текст"); title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
