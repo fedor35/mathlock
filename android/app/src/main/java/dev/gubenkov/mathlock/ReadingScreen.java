@@ -78,7 +78,7 @@ final class ReadingScreen {
         void onReadingPassed();
         /** Читать нельзя (модель, микрофон); hint — что показать над примером (может быть null). */
         void onReadingFallback(String hint);
-        /** Текст не идёт — взять другой (вместо прежнего выхода на примеры: сын пропускал чтение, 17.11). */
+        /** Текст не идёт — взять другой (вместо прежнего выхода на примеры: ребёнок пропускал чтение, 17.11). */
         void onReadingAnother();
         /** Долгое нажатие на строку уровня — экран родительского кода (примеры там не открывают телефон). */
         void onParentCode();
@@ -94,7 +94,7 @@ final class ReadingScreen {
     // тёмная палитра экрана блокировки (как у примеров) + цвета подсветки стенда
     static final int BG = 0xFF1B2430, CARD = 0xFF26323F, TEXT = 0xFFF0EEE6, DIM = 0xFF9FB3C8, ACCENT = 0xFF5B8DEF,
             LISTENING = 0xFFF0634A, CHIP = 0xFF2E3E55, SUCCESS = 0xFF3CAA64, HINT = 0xFFF2A65A;
-    // карточка текста — светлая «бумага» с тёмными буквами: на тёмной карточке сын и Фёдор плохо различали слова
+    // карточка текста — светлая «бумага» с тёмными буквами: на тёмной карточке ребёнок и Фёдор плохо различали слова
     // и подсветку (запись 07.11 00:17). Подсветка — светлые заливки, буквы поверх них остаются тёмными.
     static final int PAPER = 0xFFFBF6E9, INK = 0xFF1D2430, SYL0 = 0xFF1C4FB8, SYL1 = 0xFFB8321F,
             OK_BG = 0xFFC4EAC6, WRONG_BG = 0xFFF7B3AA, CUR_BG = 0xFFFFDD55, ENDING = 0xFFB85400;
@@ -651,7 +651,7 @@ final class ReadingScreen {
                     }
                     final ReadingMatcher.Result res = ReadingMatcher.gate(raw, released);
                     int sw = ReadingMatcher.firstWrong(res, released);
-                    // слово по слогам в подсказке: сын на записи — «дочитай красное, я не знаю»; слоги помогают разобрать
+                    // слово по слогам в подсказке: ребёнок на записи — «дочитай красное, я не знаю»; слоги помогают разобрать
                     // слово, не подсказывая его голосом
                     if (sw >= 0 && sw != stopWord) { final String syl = bySyllables(text.words.get(sw));
                         h.post(() -> { status.setTextColor(HINT); status.setText("Стоп! Прочитай красное слово ещё раз" + (syl.isEmpty() ? "" : "\nПо слогам: " + syl)); }); }
@@ -688,7 +688,7 @@ final class ReadingScreen {
         ReadingStats byTime = ReadingStats.of(matcher.match(text, hyp, true, prev), lfs, StreamingRecognizer.FRAME_SEC);
         final ReadingStats stats = new ReadingStats(byWords.words, byWords.ok, byWords.wrong, byWords.reached, byTime.seconds);
         // пустое нажатие или разговор мимо текста — тихо забываем, экран как был. Первая запись без единого верного
-        // слова тоже: три тычка в микрофон за 2 с (сын, 10.11: «не трога», «афену») оставляли красным первое слово,
+        // слова тоже: три тычка в микрофон за 2 с (ребёнок, 10.11: «не трога», «афену») оставляли красным первое слово,
         // и следующее чтение начиналось с «Прочитай красные слова».
         boolean noneOk = true; for (ReadingMatcher.State x : live.states) if (x == ReadingMatcher.State.OK) noneOk = false;
         boolean junk = hyp.replace(" ", "").length() < 3 || (prev == null && (live.progressWords == 0 || noneOk));

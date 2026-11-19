@@ -32,7 +32,7 @@ import dev.gubenkov.reading.SpeakerId;
 final class Profiles {
     static final String TAG = ReadActivity.TAG;
     static final String UNKNOWN = "unknown";
-    /** Стартовый уровень: сын читает целыми словами 30–50 слов/мин (04.11.2026); взрослый — сразу верхний. */
+    /** Стартовый уровень: ребёнок читает целыми словами 30–50 слов/мин (04.11.2026); взрослый — сразу верхний. */
     static final int START_CHILD = 5, START_ADULT = AdaptiveLevel.MAX;
     /** Взрослый «по голосу» — осторожнее: на детской речи с телефона классификатор не проверен. */
     static final int START_ADULT_GUESS = 7;

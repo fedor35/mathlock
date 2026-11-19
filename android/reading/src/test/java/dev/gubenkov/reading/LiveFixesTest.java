@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
 
-/** Застревания сына 08–10.11 на «Красное — сразу перечитать» (записи в ml/live_eval, в репозиторий не входят). */
+/** Застревания ребёнка 08–10.11 на «Красное — сразу перечитать» (записи в ml/live_eval, в репозиторий не входят). */
 public class LiveFixesTest {
     static final ReadingMatcher.State OK = ReadingMatcher.State.OK, WRONG = ReadingMatcher.State.WRONG, PENDING = ReadingMatcher.State.PENDING;
 
@@ -100,7 +100,7 @@ public class LiveFixesTest {
         assertEquals(OK, r.states[3]);
     }
 
-    /** Слово не собирается по буквам из разговора между попытками: «звонкие» из «…апрель апреле не читается покажи…» (сын, 07.11). */
+    /** Слово не собирается по буквам из разговора между попытками: «звонкие» из «…апрель апреле не читается покажи…» (ребёнок, 07.11). */
     @Test public void wordNotScrapedFromChatter() {
         ReadingMatcher.Result r = new ReadingMatcher().match(new ReadingText("В апре́ле по у́лице побежа́ли зво́нкие весе́нние ручьи́."),
                 "в апреле по улице побежали апрель апреле не читается покажи вот мори апреле вот вот тут красные в апреле а так вот весенние ручьи", true);

@@ -88,7 +88,7 @@ public class ReadActivity extends Activity {
     boolean challenge;
     int textLevel = 1;
     LiveTts live;   // озвучка на телефоне (RHVoice), файлы tts/<id>.rhvoice.wav + .json
-    /** С какого уровня начинать без истории: сын читает целыми словами 30–50 слов/мин (04.11.2026). */
+    /** С какого уровня начинать без истории: ребёнок читает целыми словами 30–50 слов/мин (04.11.2026). */
     static final int START_LEVEL = 5;
 
     int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }

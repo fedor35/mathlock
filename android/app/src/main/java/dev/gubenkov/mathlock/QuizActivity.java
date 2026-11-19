@@ -33,7 +33,7 @@ public class QuizActivity extends Activity implements ReadingScreen.Host {
     private TextView tvTable;
     private final java.util.ArrayList<String> recent = new java.util.ArrayList<>();
     private long shownAt;
-    /** Разблокировка уже заработана, ребёнок решает ещё — копит минуты до контрольной проверки (идея сына 07.11). */
+    /** Разблокировка уже заработана, ребёнок решает ещё — копит минуты до контрольной проверки (идея ребёнка 07.11). */
     private boolean bonusMode;
     private final Handler h = new Handler(Looper.getMainLooper());
     private boolean done;

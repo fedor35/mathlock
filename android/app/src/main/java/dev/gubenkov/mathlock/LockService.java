@@ -30,7 +30,7 @@ public class LockService extends Service {
         @Override public void run() {
             Prefs p = new Prefs(LockService.this);
             int min = p.checkIntervalMin();
-            if (!p.enabled() || min <= 0 || p.limitOn()) return;   // с дневным лимитом контрольных нет: время копится заранее (просьба сына 18.11)
+            if (!p.enabled() || min <= 0 || p.limitOn()) return;   // с дневным лимитом контрольных нет: время копится заранее (просьба ребёнка 18.11)
             int bank = p.checkBankMin();   // запас за дополнительные примеры — отодвигает проверку
             if (bank > 0) { p.setCheckBankMin(0); h.postDelayed(this, bank * 60_000L); return; }
             long free = p.freeLeftMs();   // бонусное время за новый уровень — проверка после него
